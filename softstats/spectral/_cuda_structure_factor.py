@@ -199,7 +199,7 @@ void struct3D(const int* jv, const int* kv,
     int j = jv[idx % N];
     int k = kv[idx % N];
     long m = idx / N;
-    
+
     float qr = qx[m]*(rx[j]-rx[k])+qy[m]*(ry[j]-ry[k])+qz[m]*(rz[j]-rz[k]);
     out[idx] = 2*cosf(qr);
 }
@@ -222,7 +222,7 @@ void struct2D(const int* jv, const int* kv,
     int j = jv[idx % N];
     int k = kv[idx % N];
     long m = idx / N;
-    
+
     float qr = qx[m]*(rx[j]-rx[k])+qy[m]*(ry[j]-ry[k]);
     out[idx] = 2*cosf(qr);
 }
@@ -246,8 +246,8 @@ if __name__ == "__main__":
     r[:, 3] = np.array((a/2, 0, a/2))
     qmax = 8
 
-    Sq, q = structfactor(r, qmax=qmax, a=a, average=average,
-                         rchunks=4, progress=True)
+    Sq, q = structure_factor(r, qmax=qmax, a=a, average=average,
+                             rchunks=4, progress=True)
 
     print(np.unique(Sq))
 

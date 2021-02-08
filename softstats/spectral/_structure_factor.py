@@ -211,8 +211,8 @@ if __name__ == "__main__":
     r[:, 3] = np.array((a/2, 0, a/2))
     qmax = 20
 
-    Sq, q = structfactor(r, qmax=qmax, a=a, average=average,
-                         rchunks=4, progress=True)
+    Sq, q = structure_factor(r, qmax=qmax, a=a, average=average,
+                             rchunks=4, progress=True)
 
     print(np.unique(Sq))
 
