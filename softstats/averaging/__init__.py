@@ -1,3 +1,3 @@
 
 
-from softstats.averaging.binning import *
+from ._binning import *

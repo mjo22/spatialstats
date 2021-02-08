@@ -19,8 +19,8 @@ import cupy as cp
 from cupyx.scipy import fft as cufft
 
 
-def pspec(data, vector=False, real=True, compute_sqr=True, average=False,
-          kmin=None, kmax=None, npts=None, bench=False, **kwargs):
+def powerspectrum(data, vector=False, real=True, compute_sqr=True, average=False,
+                  kmin=None, kmax=None, npts=None, bench=False, **kwargs):
     """
     Returns the radially averaged power spectrum
     of real signal on 2 or 3 dimensional scalar or

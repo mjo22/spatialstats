@@ -1,3 +1,3 @@
 
 
-from softstats.sampling.grid_zoom import *
+from ._grid_zoom import *

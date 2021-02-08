@@ -1,2 +1,2 @@
-warn = "default"
+logging = "WARNING"
 gpu = true

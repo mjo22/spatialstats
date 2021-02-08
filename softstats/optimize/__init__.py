@@ -1,3 +1,3 @@
 
 
-from softstats.optimize.minimizers import *
+from ._minimizers import *
