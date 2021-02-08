@@ -1,4 +1,5 @@
 
+
 from .Configuration import Configuration
 
 
@@ -18,6 +19,7 @@ def gpu(id):
     """
     Configure CuPy GPU usage
     """
+    import logging
     if id is not False:
         try:
             import cupy
@@ -31,3 +33,5 @@ def gpu(id):
 
 
 config = Configuration({logging: "WARNING", gpu: True})
+
+del logging, gpu
