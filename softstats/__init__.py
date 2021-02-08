@@ -30,4 +30,4 @@ def gpu(id):
     return id
 
 
-__config__ = Configuration({logging: "WARNING", gpu: True})
+config = Configuration({logging: "WARNING", gpu: True})
