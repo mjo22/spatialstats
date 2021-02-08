@@ -20,6 +20,7 @@ def gpu(id):
     Configure CuPy GPU usage
     """
     import logging
+    logger = logging.getLogger("softstats")
     if id is not False:
         try:
             import cupy
@@ -27,7 +28,7 @@ def gpu(id):
             if type(id) is int:
                 cupy.cuda.Device(id).use()
         except Exception as err:
-            logging.warning(str(err))
+            logging.warning(f"{str(err)}. Falling back to CPU usage.")
             id = False
     return id
 
