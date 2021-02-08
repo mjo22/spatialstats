@@ -1,12 +1,12 @@
 
-from .Configuration import Configuration, get_config
-import logging
+from .Configuration import Configuration
 
 
-def _logging(level):
+def logging(level):
     """
     Set level of logger
     """
+    import logging
     level = level.upper()
     logger = logging.getLogger("softstats")
     logging.basicConfig()
@@ -14,7 +14,7 @@ def _logging(level):
     return level
 
 
-def _gpu(id):
+def gpu(id):
     """
     Configure CuPy GPU usage
     """
@@ -30,5 +30,4 @@ def _gpu(id):
     return id
 
 
-CONFIG_FILE = get_config(__file__)
-__config__ = Configuration(CONFIG_FILE, setters=[_logging, _gpu])
+__config__ = Configuration({logging: "WARNING", gpu: True})

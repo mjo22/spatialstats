@@ -2,19 +2,17 @@
 Object to set configuration options
 """
 
-import toml
-import os
-
 
 class Configuration(object):
 
-    def __init__(self, fn, setters=[], *args, **kwargs):
-        settings = toml.load(fn)
-        for setter in setters:
-            setattr(self, setter.__name__, setter)
-        for attr in settings.keys():
-            self.set(attr, settings[attr])
-        self._attributes = list(settings.keys())
+    def __init__(self, data):
+        attributes = []
+        for setter in data.keys():
+            name = setter.__name__
+            setattr(self, f"_{name}", setter)
+            self.set(name, data[setter])
+            attributes.append(name)
+        self._attributes = attributes
 
     def set(self, key, value):
         setter = getattr(self, f"_{key}")
@@ -28,8 +26,3 @@ class Configuration(object):
         for attr in self._attributes:
             s[attr] = getattr(self, attr)
         return str(s)
-
-
-def get_config(init_path):
-    return os.path.join(os.path.dirname(init_path),
-                        f"{os.path.basename(os.path.dirname(init_path))}.toml")
