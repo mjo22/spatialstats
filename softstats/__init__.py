@@ -1,38 +1,35 @@
 
 
+import warnings
 from .Configuration import Configuration
 
 
-def logging(level):
-    """
-    Set level of logger
-    """
-    import logging
-    level = level.upper()
-    logger = logging.getLogger("softstats")
-    logging.basicConfig()
-    logger.setLevel(getattr(logging, level))
-    return level
+def warn(action):
+    warnings.simplefilter(action)
+    return action
 
 
 def gpu(id):
     """
     Configure CuPy GPU usage
     """
-    import logging
-    logger = logging.getLogger("softstats")
     if id is not False:
         try:
             import cupy
             cupy.zeros(0)
             if type(id) is int:
                 cupy.cuda.Device(id).use()
+        except (ImportError, ModuleNotFoundError) as err:
+            warnings.warn(f"{str(err)}. Falling back to CPU usage.",
+                          ImportWarning)
+            id = False
         except Exception as err:
-            logging.warning(f"{str(err)}. Falling back to CPU usage.")
+            warnings.warn(f"{str(err)}. Falling back to CPU usage.",
+                          RuntimeWarning)
             id = False
     return id
 
 
-config = Configuration({logging: "WARNING", gpu: True})
+config = Configuration({warn: "default", gpu: False})
 
-del logging, gpu
+del gpu, warn, Configuration
