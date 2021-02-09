@@ -1,7 +1,6 @@
 
 import softstats
 
-
 if softstats.config.gpu is False:
     from ._powerspectrum import powerspectrum
     from ._bispectrum import bispectrum

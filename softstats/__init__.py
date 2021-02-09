@@ -1,7 +1,22 @@
 
 
+import lazy_import
 import warnings
 from .Configuration import Configuration
+
+#
+# Lazy load subpackages
+#
+
+
+spectral = lazy_import.lazy_module("softstats.spectral")
+optimize = lazy_import.lazy_module("softstats.optimize")
+sampling = lazy_import.lazy_module("softstats.sampling")
+averaging = lazy_import.lazy_module("softstats.averaging")
+
+#
+# Set Configuration object
+#
 
 
 def warn(action):
@@ -30,6 +45,10 @@ def gpu(id):
     return id
 
 
-config = Configuration({warn: "default", gpu: False})
+config = Configuration({warn: "ignore", gpu: False})
 
-del gpu, warn, Configuration
+
+#
+# Clean namespace
+#
+del gpu, warn, Configuration, lazy_import
