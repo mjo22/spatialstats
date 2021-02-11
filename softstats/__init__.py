@@ -10,9 +10,8 @@ from .Configuration import Configuration
 
 
 spectral = lazy_import.lazy_module("softstats.spectral")
-optimize = lazy_import.lazy_module("softstats.optimize")
-sampling = lazy_import.lazy_module("softstats.sampling")
-averaging = lazy_import.lazy_module("softstats.averaging")
+scatter = lazy_import.lazy_module("softstats.scatter")
+util = lazy_import.lazy_module("softstats.util")
 
 #
 # Set Configuration object
