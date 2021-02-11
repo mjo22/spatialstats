@@ -135,19 +135,19 @@ def structure_factor(positions, a=1., qmax=5, average=True, corners=False,
         msg += "Decrease rchunks and/or qchunks."
         raise ValueError(msg) from err
     j = cp.arange(N, dtype=int)
-    k = cp.empty(rchunks, dtype=int)
+    k = cp.zeros(rchunks, dtype=int)
     qm = cp.zeros((ndim, qchunks), dtype=float)
     qflat = q.reshape((ndim, M))
     out = cp.zeros(M, dtype=float)
     # Set arguments for kernel
     if ndim == 3:
         rx, ry, rz = R[0], R[1], R[2]
-        qx, qy, qz = q[0], q[1], q[2]
+        qx, qy, qz = qm[0], qm[1], qm[2]
         args = (jv, kv, rx, ry, rz, qx, qy, qz,
                 cp.int64(qchunks), cp.int64(N*rchunks), buf)
     else:
         rx, ry = R[0], R[1]
-        qx, qy = q[0], q[1]
+        qx, qy = qm[0], qm[1]
         args = (jv, kv, rx, ry, qx, qy,
                 cp.int64(qchunks), cp.int64(N*rchunks), buf)
     # Calculate
@@ -157,7 +157,7 @@ def structure_factor(positions, a=1., qmax=5, average=True, corners=False,
         jv[...], kv[...] = cp.meshgrid(j, k, indexing="ij")
         for m in range(mq):
             qstart, qstop = m*qchunks+1, (m+1)*qchunks+1
-            q[:] = qflat[:, qstart:qstop]
+            qm[:] = qflat[:, qstart:qstop]
             kernel((blockspergrid,), (threadsperblock,), args)
             out[qstart:qstop] += buf.sum(axis=1)
             if progress:
@@ -187,6 +187,7 @@ def structure_factor(positions, a=1., qmax=5, average=True, corners=False,
         q[...] = cp.fft.fftshift(q, axes=1+np.arange(ndim-1))
 
     Sq = cp.asnumpy(Sq)
+    q = cp.asnumpy(q)
 
     if bench:
         print(f"\nTime: {time.time() - t0:.04f}")
@@ -252,7 +253,7 @@ if __name__ == "__main__":
     from matplotlib import pyplot as plt
 
     # Sample problem of Face-centered cubic crystal
-    sample = "BCC"
+    sample = "FCC"
     if sample == "FCC":
         average = False
         ndim = 3
@@ -285,7 +286,7 @@ if __name__ == "__main__":
         exit()
 
     Sq, q = structure_factor(r, qmax=qmax, a=a,
-                             average=average,# rchunks=200,
+                             average=average,  # rchunks=200,
                              progress=True, corners=False)
 
     fig = plt.figure()
