@@ -1,17 +1,7 @@
 
-
-import lazy_import
+import importlib
 import warnings
 from .Configuration import Configuration
-
-#
-# Lazy load subpackages
-#
-
-
-spectral = lazy_import.lazy_module("softstats.spectral")
-scatter = lazy_import.lazy_module("softstats.scatter")
-util = lazy_import.lazy_module("softstats.util")
 
 #
 # Set Configuration object
@@ -48,6 +38,21 @@ config = Configuration({warn: "ignore", gpu: False})
 
 
 #
+# Lazy load subpackages
+#
+
+
+def __getattr__(name):
+    if name in ['spectral', 'scatter', 'utils']:
+        return importlib.import_module("."+name, __name__)
+    elif name == 'config':
+        return config
+    else:
+        raise AttributeError(
+            f"{__name__!r} has no attribute {name!r}")
+
+
+#
 # Clean namespace
 #
-del gpu, warn, Configuration, lazy_import
+del gpu, warn, Configuration

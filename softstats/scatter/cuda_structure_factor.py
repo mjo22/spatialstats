@@ -105,16 +105,16 @@ def structure_factor(positions, a=1., qmax=5, average=True, corners=False,
     R = cp.asarray(positions, dtype=float)
 
     # Params for splitting calculation into chunks
-    qchunks = M-1 if qchunks is None else qchunks
+    qchunks = M if qchunks is None else qchunks
     rchunks = N if rchunks is None else rchunks
 
-    if (M-1) % qchunks != 0:
-        raise ValueError(f"qchunks must divide # nonzero wavevectors {M-1}")
+    if M % qchunks != 0:
+        raise ValueError(f"qchunks must divide # nonzero wavevectors {M}")
     if N % rchunks != 0:
         raise ValueError(f"rchunks must divide # particles {N}")
 
     nr = N // rchunks
-    mq = (M-1) // qchunks
+    mq = M // qchunks
 
     if bench:
         t0 = time.time()
@@ -156,14 +156,13 @@ def structure_factor(positions, a=1., qmax=5, average=True, corners=False,
         k[:] = cp.arange(rstart, rstop, dtype=int)
         jv[...], kv[...] = cp.meshgrid(j, k, indexing="ij")
         for m in range(mq):
-            qstart, qstop = m*qchunks+1, (m+1)*qchunks+1
+            qstart, qstop = m*qchunks, (m+1)*qchunks
             qm[:] = qflat[:, qstart:qstop]
             kernel((blockspergrid,), (threadsperblock,), args)
             out[qstart:qstop] += buf.sum(axis=1)
             if progress:
                 bar.update(n*mq+m+1)
 
-    out[0] = N**2
     out = out/N
     Sq = out.reshape(shape)
 

@@ -14,7 +14,7 @@ setup(
     author_email="mobrien-temp@flatironinstitute.org",
     keywords="soft-condensed biophysics bispectrum cupy",
     description=(
-        "SoftStats is collection of statistical tools used to analyze multi-scale soft and biological matter systems."),
+        "softstats is collection of statistical tools used to analyze multi-scale soft and biological matter systems."),
     long_description=read("README.md"),
     packages=find_packages(),
     zip_safe=False
