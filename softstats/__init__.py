@@ -43,7 +43,7 @@ config = Configuration({warn: "ignore", gpu: False})
 
 
 def __getattr__(name):
-    if name in ['spectral', 'scatter', 'utils']:
+    if name in ['spectral', 'cloud', 'utils']:
         return importlib.import_module("."+name, __name__)
     elif name == 'config':
         return config
