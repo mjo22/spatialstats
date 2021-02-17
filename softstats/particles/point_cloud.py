@@ -21,13 +21,13 @@ def rdf(points, boxsize, rmax=None, **kwargs):
     points : np.ndarray [ndim, N]
         Particle locations, where ndim is number
         of dimensions and N is number of particles.
-
-    Keywords
-    --------
     boxsize : float or list of floats
         Size of the rectangular domain over which
         to apply periodic boundary conditions.
         See scipy.spatial.cKDTree documentation.
+
+    Keywords
+    --------
     rmax : float
         Cutoff radius for KDTree search
 
@@ -44,11 +44,17 @@ def rdf(points, boxsize, rmax=None, **kwargs):
     points = points.T
     boxsize = boxsize if type(boxsize) is list else ndim*[boxsize]
     rmax = min(boxsize)/2 if rmax is None else rmax
+
+    if ndim not in [2, 3]:
+        raise ValueError("Dimension of space must be 2 or 3")
+
     # Periodic boundary conditions
     impose_pbc(points, boxsize)
+
     # Get point pairs and their displacement vectors
     pairs = get_pairs(points, boxsize, rmax)
     rjk = get_displacements(points, pairs, boxsize, rmax)
+
     # Get g(r)
     r, gr = gen_rdf(rjk, N, N/(np.prod(boxsize)),
                     rmax=rmax, **kwargs)
@@ -56,9 +62,10 @@ def rdf(points, boxsize, rmax=None, **kwargs):
 
 
 def gen_rdf(rvec, npar, density, rmin=None, rmax=None, nbins=100):
+    '''Generate radial distribution function'''
     ndim = rvec.shape[1]
     rnorm = np.linalg.norm(rvec, axis=1)
-    rmin = np.min(rnorm) if rmin is None else rmin
+    rmin = 0 if rmin is None else rmin
     rmax = np.max(rnorm) if rmax is None else rmax
     count, bins = np.histogram(rnorm, np.linspace(rmin, rmax, nbins))
     # Scale with vol and density

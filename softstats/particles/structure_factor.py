@@ -5,6 +5,7 @@ for a set of particles.
 
 import numpy as np
 from scipy.integrate import simps
+from scipy.special import jv
 from .point_cloud import rdf
 
 
@@ -19,9 +20,6 @@ def structure_factor(points, boxsize, return_rdf=False,
     points : np.ndarray [ndim, N]
         Particle locations, where ndim is number
         of dimensions and N is number of particles.
-    q : np.ndarray
-        Wavenumbers over which to calculate Sq.
-        This should be dimensional.
     boxsize : float or list of floats
         Size of the rectangular domain over which
         to apply periodic boundary conditions.
@@ -31,6 +29,10 @@ def structure_factor(points, boxsize, return_rdf=False,
     --------
     return_rdf : bool
         Return the rdf used to calculate structure factor.
+    qmin : int
+        Minimum wavenumber index for Sq
+    qmax : int
+        Maximum wavenumber index for Sq
 
     **kwargs passed to rdf.
 
@@ -39,16 +41,20 @@ def structure_factor(points, boxsize, return_rdf=False,
     Sq : np.ndarray
         The static structure factor
     q : np.ndarray
-        Dimensional wavenumbers
+        Dimensional wavenumbers discretized by 2pi/L, where
+        L is the maximum dimension of boxsize
     """
     ndim, N = points.shape
     boxsize = boxsize if type(boxsize) is list else ndim*[boxsize]
 
+    if ndim not in [2, 3]:
+        raise ValueError("Dimension of space must be 2 or 3")
+
     # Generate wavenumbers
-    qmin = 1./max(boxsize) if qmin is None else qmin
-    qmax = 100./max(boxsize) if qmax is None else qmax
+    qmin = 1 if qmin is None else qmin
+    qmax = 100 if qmax is None else qmax
     npts = qmax-qmin+1 if npts is None else npts
-    q = np.linspace(qmin, qmax, npts)
+    q = (2*np.pi / max(boxsize))*np.linspace(qmin, qmax, npts)
 
     # Calculate g(r) and density for integration
     gr, r = rdf(points, boxsize, **kwargs)
@@ -57,11 +63,15 @@ def structure_factor(points, boxsize, return_rdf=False,
     def S(q):
         '''
         Integrand for isotropic structure factor
-        
+
         See https://en.wikipedia.org/wiki/Radial_distribution_function.
         '''
-        f = np.sin(2*np.pi*q*r)*r*(gr-1)
-        return 1+2**(ndim-1)*np.pi*rho*simps(f, r)/(2*np.pi*q)
+        if ndim == 3:
+            f = np.sin(q*r)*r*(gr-1)
+            return 1+4*np.pi*rho*simps(f, r)/(q)
+        else:
+            f = jv(0, q*r)*r*(gr-1)
+            return 1+2*np.pi*rho*simps(f, r)
 
     # Integrate for all q
     Sq = []
