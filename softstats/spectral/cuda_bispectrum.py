@@ -25,7 +25,7 @@ from cupy.cuda.memory import OutOfMemoryError
 
 
 def bispectrum(data, nsamples=100000, vector=False, double=True,
-               mean_subtract=False, seed=None, nchunks=None,
+               mean_subtract=False, seed=None, chunks=None,
                npts=None, kmin=None, kmax=None,
                bench=True, progress=False, **kwargs):
     """
@@ -49,16 +49,16 @@ def bispectrum(data, nsamples=100000, vector=False, double=True,
     nsamples : int
         The number of triangles to sample for each
         pixel. For sufficiently large nsamples and
-        small nchunks, the user may receive an OutOfMemoryError.
+        large chunks, the user may receive an OutOfMemoryError.
     mean_subtract : bool
         Subtract mean off of image data to highlight
         non-linearities in bicoherence
     seed : bool
         Random number seed
-    nchunks : int
-        The number of iterations to calculate the
+    chunks : int
+        Determines the number of iterations to calculate the
         bispectrum. For sufficiently large nsamples and
-        small nchunks, the user may receive an OutOfMemoryError.
+        large chunks, the user may receive an OutOfMemoryError.
     npts : int
         Number of wavenumbers in bispectrum calculation
     kmin : int
@@ -92,19 +92,15 @@ def bispectrum(data, nsamples=100000, vector=False, double=True,
         ncomp = data.shape[0]
         shape = data[0].shape
         norm = float(data[0].size)**3
-        if double:
-            kernel = _kernel3Dvec if ndim == 3 else _kernel2Dvec
-        else:
-            kernel = _kernel3Dvecf if ndim == 3 else _kernel2Dvecf
     else:
         N, ndim = max(data.shape), data.ndim
         ncomp = 1
         shape = data.shape
         norm = float(data.size)**3
-        if double:
-            kernel = _kernel3D if ndim == 3 else _kernel2D
-        else:
-            kernel = _kernel3Df if ndim == 3 else _kernel2Df
+
+    temp = f"bispectrum{ndim}D" if not vector else f"bispectrumVec{ndim}D"
+    func = f"{temp}f" if not double else temp
+    kernel = module.get_function(func)
 
     if ndim not in [2, 3]:
         raise ValueError("Data must be 2D or 3D")
@@ -114,9 +110,9 @@ def bispectrum(data, nsamples=100000, vector=False, double=True,
 
     # Set geometry of output image
     kmax = cp.int32(N/2) if kmax is None else cp.int32(kmax)
-    kmin = cp.int32(0.) if kmin is None else cp.int32(kmin)
-    dim = kmax-kmin if npts is None else cp.int32(npts)
-    nchunks = dim if nchunks is None else nchunks
+    kmin = cp.int32(1.) if kmin is None else cp.int32(kmin)
+    dim = kmax-kmin+1 if npts is None else cp.int32(npts)
+    chunks = dim if chunks is None else chunks
     kn = cp.linspace(kmin, kmax, dim, dtype=float, endpoint=False)
 
     if kmax > N//2:
@@ -147,14 +143,18 @@ def bispectrum(data, nsamples=100000, vector=False, double=True,
     if seed is not None:
         cp.random.seed(seed=seed)
     fac = 2 if ndim == 2 else 4
-    randsamples = cp.random.uniform(size=fac*nsamples, dtype=float)
+    samples = cp.random.uniform(size=fac*nsamples, dtype=float)
 
     # Package args for dispatch
-    args = (randsamples, kn, dim, cp.int32(nsamples), *fftflat, *shape)
+    args = (samples, kn, dim, cp.int64(nsamples), *fftflat, *shape)
 
     def dispatch(bind, buf, out, cbuf, count):
 
-        npix = cp.int32(bind.size)
+        buf[...] = 0.
+        cbuf[...] = 0.
+        out[...] = 0.
+
+        npix = cp.int64(bind.size)
 
         threadsperblock = 32
         blockspergrid = (nsamples*npix +
@@ -162,8 +162,6 @@ def bispectrum(data, nsamples=100000, vector=False, double=True,
 
         birebuf, biimbuf, binormbuf = buf[0], buf[1], buf[2]
         bire, biim, binorm = out[0], out[1], out[2]
-
-        cbuf[...] = 0
 
         kernel((blockspergrid,), (threadsperblock,),
                (birebuf, biimbuf, binormbuf, cbuf, bind, npix, *args))
@@ -174,30 +172,30 @@ def bispectrum(data, nsamples=100000, vector=False, double=True,
         count[:] = cp.sum(cbuf, dtype=cp.int32, axis=1)
 
     # Chunk size
-    chunk = int(dim**2//nchunks)
-    if dim**2 % nchunks != 0:
-        msg = f"nchunks {nchunks} must divide squared image dimension {dim}"
+    nchunks = int(dim**2//chunks)
+    if dim**2 % chunks != 0:
+        msg = f"chunks {chunks} must divide squared image dimension {dim}"
         raise ValueError(msg)
 
     # Catch memory errors. Larger datasets require less parallelization.
     try:
-        buf = cp.zeros((3, chunk, nsamples), dtype=float)
-        cbuf = cp.zeros((chunk, nsamples), dtype=cp.int32)
+        buf = cp.zeros((3, chunks, nsamples), dtype=float)
+        cbuf = cp.zeros((chunks, nsamples), dtype=cp.int32)
     except OutOfMemoryError as err:
-        msg = f"Out of memory allocating buffers of shape {(chunk, nsamples)}."
-        msg += " Try increasing nchunks."
+        msg = f"Out of memory allocating buffers of shape {(chunks, nsamples)}."
+        msg += " Try decreasing chunks."
         raise ValueError(msg) from err
 
     if progress:
         bar = ProgressBar(nchunks)
 
-    # Calculate chunk pixels at a time
+    # Calculate chunks pixels at a time
     result = cp.zeros((3, npix), dtype=float)
-    out = cp.zeros((3, chunk), dtype=float)
-    count = cp.zeros(chunk, dtype=cp.int32)
+    out = cp.zeros((3, chunks), dtype=float)
+    count = cp.zeros(chunks, dtype=cp.int32)
     bire, biim, biconorm = result[0], result[1], result[2]
     for i in range(nchunks):
-        start, stop = i*chunk, (i+1)*chunk
+        start, stop = i*chunks, (i+1)*chunks
         ind = bind[start:stop]
         dispatch(ind, buf, out, cbuf, count)
         bire[start:stop] = out[0]/count
@@ -213,13 +211,15 @@ def bispectrum(data, nsamples=100000, vector=False, double=True,
     k = cp.asnumpy(kn)
 
     # Release memory
-    del fftflat, bispectrum, randsamples, kn
+    del fftflat, bispectrum, samples, kn
     del buf, cbuf, result, count, out, bire, biim, bind, biconorm
     mempool.free_all_blocks()
     pinned_mempool.free_all_blocks()
 
     if bench:
-        print(f"\nTime: {time() - t0:.04f}")
+        if progress:
+            print()
+        print(f"Time: {time() - t0:.04f} s")
 
     return bispec, bicoh, k
 
@@ -276,21 +276,23 @@ def cufftn(data, overwrite_input=True, **kwargs):
     return fft
 
 
-_kernel3D = cp.RawKernel(r'''
+module = cp.RawModule(code=r'''
 # include <cupy/complex.cuh>
 
 const double PI = 3.14159265358979323846;
+const float PIf = 3.14159265358979323846;
 
-extern "C" __global__
-void bispectrum3D(double* bire, double* biim, double* biconorm, int* count, int* bind,
-                  int npix, const double* randsamples, double* kn, int dim,
-                  int nsamples, const complex<double>* fft, 
-                  int N1, int N2, int N3) {
+extern "C" {
+__global__ void bispectrum3D(double* bire, double* biim, double* biconorm,
+                             int* count, int* bind, long npix,
+                             const double* samples, double* kn, int dim,
+                             long nsamples, const complex<double>* fft,
+                             int N1, int N2, int N3) {
 
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    long idx = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (idx > nsamples*npix - 1) { return; }
-    
+
     int l = idx / nsamples;
     int k = idx % nsamples;
 
@@ -304,10 +306,10 @@ void bispectrum3D(double* bire, double* biim, double* biconorm, int* count, int*
     double sinphi1, sinphi2;
 
     // Read random samples
-    phi1 = randsamples[k] * 2*PI;
-    phi2 = randsamples[k+nsamples] * 2*PI;
-    costheta1 = 2*randsamples[k+2*nsamples]-1;
-    costheta2 = 2*randsamples[k+3*nsamples]-1;
+    phi1 = samples[k] * 2*PI;
+    phi2 = samples[k+nsamples] * 2*PI;
+    costheta1 = 2*samples[k+2*nsamples]-1;
+    costheta2 = 2*samples[k+3*nsamples]-1;
 
     // Compute coordinates along spherical shells
     sincos(phi1, &sinphi1, &cosphi1);
@@ -331,18 +333,18 @@ void bispectrum3D(double* bire, double* biim, double* biconorm, int* count, int*
     k3y = k1y + k2y;
     k3z = k1z + k2z;
 
-    // Ensure we have sampled an ok region
-    if ((abs(k3i) > N1/2) || (abs(k3j) > N2/2) || (abs(k3k) > N3/2)) { return; }
-
-    __syncthreads();
-
     // Convert frequency domain coordinates to integer
     k1i = rint(k1x); k1j = rint(k1y); k1k = rint(k1z);
     k2i = rint(k2x); k2j = rint(k2y); k2k = rint(k2z);
     k3i = rint(k3x); k3j = rint(k3y); k3k = rint(k3z);
 
+    // Ensure we have sampled an ok region
+    if ((abs(k3i) > N1/2) || (abs(k3j) > N2/2) || (abs(k3k) > N3/2)) { return; }
+
+    __syncthreads();
+
     // Map frequency domain to index domain
-    int q1i, q1j, q1k, q2i, q2j, q2k, q3i, q3j, q3k;
+    long q1i, q1j, q1k, q2i, q2j, q2k, q3i, q3j, q3k;
 
     if (k1i < 0) { q1i = k1i + N1; } else { q1i = k1i; }
     if (k1j < 0) { q1j = k1j + N2; } else { q1j = k1j; }
@@ -357,9 +359,9 @@ void bispectrum3D(double* bire, double* biim, double* biconorm, int* count, int*
     if (k3k < 0) { q3k = k3k + N3; } else { q3k = k3k; }
 
     // Map multi-dimensional indices to 1-dimensional indices
-    int idx1 = (q1i*N3 + q1j)*N2 + q1k;
-    int idx2 = (q2i*N3 + q2j)*N2 + q2k;
-    int idx3 = (q3i*N3 + q3j)*N2 + q3k;
+    long idx1 = (q1i*N3 + q1j)*N2 + q1k;
+    long idx2 = (q2i*N3 + q2j)*N2 + q2k;
+    long idx3 = (q3i*N3 + q3j)*N2 + q3k;
 
     // Sample correlation function
     complex<double> sample;
@@ -376,21 +378,15 @@ void bispectrum3D(double* bire, double* biim, double* biconorm, int* count, int*
     count[idx] = 1;
 
 }
-''', 'bispectrum3D')
 
 
-_kernel2D = cp.RawKernel(r'''
-# include <cupy/complex.cuh>
+__global__ void bispectrum2D(double* bire, double* biim, double* biconorm,
+                             int* count, int* bind, long npix,
+                             const double* samples, double* kn, int dim,
+                             long nsamples, const complex<double>* fft,
+                             int N1, int N2) {
 
-const double PI = 3.14159265358979323846;
-
-extern "C" __global__
-void bispectrum2D(double* bire, double* biim, double* biconorm, int* count, int* bind,
-                  int npix, const double* randsamples, double* kn, int dim,
-                  int nsamples, const complex<double>* fft,
-                  int N1, int N2) {
-
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    long idx = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (idx > nsamples*npix - 1) { return; }
 
@@ -406,8 +402,8 @@ void bispectrum2D(double* bire, double* biim, double* biconorm, int* count, int*
     double sinphi1, sinphi2;
 
     // Read random samples
-    phi1 = randsamples[k] * 2*PI;
-    phi2 = randsamples[k+nsamples] * 2*PI;
+    phi1 = samples[k] * 2*PI;
+    phi2 = samples[k+nsamples] * 2*PI;
 
     // Compute coordinates along spherical shells
     sincos(phi1, &sinphi1, &cosphi1);
@@ -437,7 +433,7 @@ void bispectrum2D(double* bire, double* biim, double* biconorm, int* count, int*
     __syncthreads();
 
     // Map frequency domain to index domain
-    int q1i, q1j, q2i, q2j, q3i, q3j;
+    long q1i, q1j, q2i, q2j, q3i, q3j;
 
     if (k1i < 0) { q1i = k1i + N1; } else { q1i = k1i; }
     if (k1j < 0) { q1j = k1j + N2; } else { q1j = k1j; }
@@ -449,9 +445,9 @@ void bispectrum2D(double* bire, double* biim, double* biconorm, int* count, int*
     if (k3j < 0) { q3j = k3j + N2; } else { q3j = k3j; }
 
     // Map multi-dimensional indices to 1-dimensional indices
-    int idx1 = (q1i*N2 + q1j);
-    int idx2 = (q2i*N2 + q2j);
-    int idx3 = (q3i*N2 + q3j);
+    long idx1 = (q1i*N2 + q1j);
+    long idx2 = (q2i*N2 + q2j);
+    long idx3 = (q3i*N2 + q3j);
 
     // Sample correlation function
     complex<double> sample;
@@ -459,7 +455,7 @@ void bispectrum2D(double* bire, double* biim, double* biconorm, int* count, int*
 
     sample = fft[idx1] * fft[idx2] * conj(fft[idx3]);
     mod = abs(sample);
-    
+
     re = real(sample);
     im = imag(sample);
 
@@ -469,25 +465,20 @@ void bispectrum2D(double* bire, double* biim, double* biconorm, int* count, int*
     count[idx] = 1;
 
 }
-''', 'bispectrum2D')
 
+__global__ void bispectrumVec3D(double* bire, double* biim, double* biconorm,
+                                int* count, int* bind, long npix,
+                                const double* samples, double* kn,
+                                int dim, long nsamples,
+                                const complex<double>* fftx,
+                                const complex<double>* ffty,
+                                const complex<double>* fftz,
+                                int N1, int N2, int N3) {
 
-_kernel3Dvec = cp.RawKernel(r'''
-# include <cupy/complex.cuh>
-
-const double PI = 3.14159265358979323846;
-
-extern "C" __global__
-void vecbispectrum3D(double* bire, double* biim, double* biconorm, int* count, int* bind,
-                     int npix, const double* randsamples,
-                     double* kn, int dim, int nsamples,
-                     const complex<double>* fftx, const complex<double>* ffty, const complex<double>* fftz, 
-                     int N1, int N2, int N3) {
-
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    long idx = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (idx > nsamples*npix - 1) { return; }
-    
+
     int l = idx / nsamples;
     int k = idx % nsamples;
 
@@ -501,10 +492,10 @@ void vecbispectrum3D(double* bire, double* biim, double* biconorm, int* count, i
     double sinphi1, sinphi2;
 
     // Read random samples
-    phi1 = randsamples[k] * 2*PI;
-    phi2 = randsamples[k+nsamples] * 2*PI;
-    costheta1 = 2*randsamples[k+2*nsamples]-1;
-    costheta2 = 2*randsamples[k+3*nsamples]-1;
+    phi1 = samples[k] * 2*PI;
+    phi2 = samples[k+nsamples] * 2*PI;
+    costheta1 = 2*samples[k+2*nsamples]-1;
+    costheta2 = 2*samples[k+3*nsamples]-1;
 
     // Compute coordinates along spherical shells
     sincos(phi1, &sinphi1, &cosphi1);
@@ -539,7 +530,7 @@ void vecbispectrum3D(double* bire, double* biim, double* biconorm, int* count, i
     __syncthreads();
 
     // Map frequency domain to index domain
-    int q1i, q1j, q1k, q2i, q2j, q2k, q3i, q3j, q3k;
+    long q1i, q1j, q1k, q2i, q2j, q2k, q3i, q3j, q3k;
 
     if (k1i < 0) { q1i = k1i + N1; } else { q1i = k1i; }
     if (k1j < 0) { q1j = k1j + N2; } else { q1j = k1j; }
@@ -554,9 +545,9 @@ void vecbispectrum3D(double* bire, double* biim, double* biconorm, int* count, i
     if (k3k < 0) { q3k = k3k + N3; } else { q3k = k3k; }
 
     // Map multi-dimensional indices to 1-dimensional indices
-    int idx1 = (q1i*N3 + q1j)*N2 + q1k;
-    int idx2 = (q2i*N3 + q2j)*N2 + q2k;
-    int idx3 = (q3i*N3 + q3j)*N2 + q3k;
+    long idx1 = (q1i*N3 + q1j)*N2 + q1k;
+    long idx2 = (q2i*N3 + q2j)*N2 + q2k;
+    long idx3 = (q3i*N3 + q3j)*N2 + q3k;
 
     // Sample correlation function
     complex<double> sample, samplex, sampley, samplez;
@@ -578,22 +569,16 @@ void vecbispectrum3D(double* bire, double* biim, double* biconorm, int* count, i
     count[idx] = 1;
 
 }
-''', 'vecbispectrum3D')
 
+__global__ void bispectrumVec2D(double* bire, double* biim, double* biconorm,
+                                int* count, int* bind, long npix,
+                                const double* samples, double* kn,
+                                int dim, long nsamples,
+                                const complex<double>* fftx,
+                                const complex<double>* ffty,
+                                int N1, int N2) {
 
-_kernel2Dvec = cp.RawKernel(r'''
-# include <cupy/complex.cuh>
-
-const double PI = 3.14159265358979323846;
-
-extern "C" __global__
-void vecbispectrum2D(double* bire, double* biim, double* biconorm, int* count, int* bind,
-                     int npix, const double* randsamples,
-                     double* kn, int dim, int nsamples,
-                     const complex<double>* fftx, const complex<double>* ffty,
-                     int N1, int N2) {
-
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    long idx = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (idx > nsamples*npix - 1) { return; }
 
@@ -609,8 +594,8 @@ void vecbispectrum2D(double* bire, double* biim, double* biconorm, int* count, i
     double sinphi1, sinphi2;
 
     // Read random samples
-    phi1 = randsamples[k] * 2*PI;
-    phi2 = randsamples[k+nsamples] * 2*PI;
+    phi1 = samples[k] * 2*PI;
+    phi2 = samples[k+nsamples] * 2*PI;
 
     // Compute coordinates along spherical shells
     sincos(phi1, &sinphi1, &cosphi1);
@@ -640,7 +625,7 @@ void vecbispectrum2D(double* bire, double* biim, double* biconorm, int* count, i
     __syncthreads();
 
     // Map frequency domain to index domain
-    int q1i, q1j, q2i, q2j, q3i, q3j;
+    long q1i, q1j, q2i, q2j, q3i, q3j;
 
     if (k1i < 0) { q1i = k1i + N1; } else { q1i = k1i; }
     if (k1j < 0) { q1j = k1j + N2; } else { q1j = k1j; }
@@ -652,9 +637,9 @@ void vecbispectrum2D(double* bire, double* biim, double* biconorm, int* count, i
     if (k3j < 0) { q3j = k3j + N2; } else { q3j = k3j; }
 
     // Map multi-dimensional indices to 1-dimensional indices
-    int idx1 = (q1i*N2 + q1j);
-    int idx2 = (q2i*N2 + q2j);
-    int idx3 = (q3i*N2 + q3j);
+    long idx1 = (q1i*N2 + q1j);
+    long idx2 = (q2i*N2 + q2j);
+    long idx3 = (q3i*N2 + q3j);
 
     // Sample correlation function
     complex<double> samplex, sampley, sample; 
@@ -674,24 +659,18 @@ void vecbispectrum2D(double* bire, double* biim, double* biconorm, int* count, i
     count[idx] = 1;
 
 }
-''', 'vecbispectrum2D')
 
 
-_kernel3Df = cp.RawKernel(r'''
-# include <cupy/complex.cuh>
+__global__ void bispectrum3Df(float* bire, float* biim, float* biconorm,
+                              int* count, int* bind, long npix,
+                              const float* samples, float* kn, int dim,
+                              long nsamples, const complex<float>* fft,
+                              int N1, int N2, int N3) {
 
-const float PI = 3.14159265358979323846;
-
-extern "C" __global__
-void bispectrum3Df(float* bire, float* biim, float* biconorm, int* count, int* bind,
-                   int npix, const float* randsamples, float* kn, int dim,
-                   int nsamples, const complex<float>* fft, 
-                   int N1, int N2, int N3) {
-
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    long idx = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (idx > nsamples*npix - 1) { return; }
-    
+
     int l = idx / nsamples;
     int k = idx % nsamples;
 
@@ -705,10 +684,10 @@ void bispectrum3Df(float* bire, float* biim, float* biconorm, int* count, int* b
     float sinphi1, sinphi2;
 
     // Read random samples
-    phi1 = randsamples[k] * 2*PI;
-    phi2 = randsamples[k+nsamples] * 2*PI;
-    costheta1 = 2*randsamples[k+2*nsamples]-1;
-    costheta2 = 2*randsamples[k+3*nsamples]-1;
+    phi1 = samples[k] * 2*PIf;
+    phi2 = samples[k+nsamples] * 2*PIf;
+    costheta1 = 2*samples[k+2*nsamples]-1;
+    costheta2 = 2*samples[k+3*nsamples]-1;
 
     // Compute coordinates along spherical shells
     sincos(phi1, &sinphi1, &cosphi1);
@@ -743,7 +722,7 @@ void bispectrum3Df(float* bire, float* biim, float* biconorm, int* count, int* b
     __syncthreads();
 
     // Map frequency domain to index domain
-    int q1i, q1j, q1k, q2i, q2j, q2k, q3i, q3j, q3k;
+    long q1i, q1j, q1k, q2i, q2j, q2k, q3i, q3j, q3k;
 
     if (k1i < 0) { q1i = k1i + N1; } else { q1i = k1i; }
     if (k1j < 0) { q1j = k1j + N2; } else { q1j = k1j; }
@@ -758,9 +737,9 @@ void bispectrum3Df(float* bire, float* biim, float* biconorm, int* count, int* b
     if (k3k < 0) { q3k = k3k + N3; } else { q3k = k3k; }
 
     // Map multi-dimensional indices to 1-dimensional indices
-    int idx1 = (q1i*N3 + q1j)*N2 + q1k;
-    int idx2 = (q2i*N3 + q2j)*N2 + q2k;
-    int idx3 = (q3i*N3 + q3j)*N2 + q3k;
+    long idx1 = (q1i*N3 + q1j)*N2 + q1k;
+    long idx2 = (q2i*N3 + q2j)*N2 + q2k;
+    long idx3 = (q3i*N3 + q3j)*N2 + q3k;
 
     // Sample correlation function
     complex<float> sample;
@@ -777,21 +756,15 @@ void bispectrum3Df(float* bire, float* biim, float* biconorm, int* count, int* b
     count[idx] = 1;
 
 }
-''', 'bispectrum3Df')
 
 
-_kernel2Df = cp.RawKernel(r'''
-# include <cupy/complex.cuh>
+__global__ void bispectrum2Df(float* bire, float* biim, float* biconorm,
+                              int* count, int* bind, long npix,
+                              const float* samples, float* kn, int dim,
+                              long nsamples, const complex<float>* fft,
+                              int N1, int N2) {
 
-const float PI = 3.14159265358979323846;
-
-extern "C" __global__
-void bispectrum2Df(float* bire, float* biim, float* biconorm, int* count, int* bind,
-                   int npix, const float* randsamples, float* kn, int dim,
-                   int nsamples, const complex<float>* fft,
-                   int N1, int N2) {
-
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    long idx = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (idx > nsamples*npix - 1) { return; }
 
@@ -807,8 +780,8 @@ void bispectrum2Df(float* bire, float* biim, float* biconorm, int* count, int* b
     float sinphi1, sinphi2;
 
     // Read random samples
-    phi1 = randsamples[k] * 2*PI;
-    phi2 = randsamples[k+nsamples] * 2*PI;
+    phi1 = samples[k] * 2*PIf;
+    phi2 = samples[k+nsamples] * 2*PIf;
 
     // Compute coordinates along spherical shells
     sincos(phi1, &sinphi1, &cosphi1);
@@ -838,7 +811,7 @@ void bispectrum2Df(float* bire, float* biim, float* biconorm, int* count, int* b
     __syncthreads();
 
     // Map frequency domain to index domain
-    int q1i, q1j, q2i, q2j, q3i, q3j;
+    long q1i, q1j, q2i, q2j, q3i, q3j;
 
     if (k1i < 0) { q1i = k1i + N1; } else { q1i = k1i; }
     if (k1j < 0) { q1j = k1j + N2; } else { q1j = k1j; }
@@ -850,9 +823,9 @@ void bispectrum2Df(float* bire, float* biim, float* biconorm, int* count, int* b
     if (k3j < 0) { q3j = k3j + N2; } else { q3j = k3j; }
 
     // Map multi-dimensional indices to 1-dimensional indices
-    int idx1 = (q1i*N2 + q1j);
-    int idx2 = (q2i*N2 + q2j);
-    int idx3 = (q3i*N2 + q3j);
+    long idx1 = (q1i*N2 + q1j);
+    long idx2 = (q2i*N2 + q2j);
+    long idx3 = (q3i*N2 + q3j);
 
     // Sample correlation function
     complex<float> sample;
@@ -869,25 +842,21 @@ void bispectrum2Df(float* bire, float* biim, float* biconorm, int* count, int* b
     count[idx] = 1;
 
 }
-''', 'bispectrum2Df')
 
 
-_kernel3Dvecf = cp.RawKernel(r'''
-# include <cupy/complex.cuh>
+__global__ void bispectrumVec3Df(float* bire, float* biim, float* biconorm,
+                                 int* count, int* bind, long npix,
+                                 const float* samples, float* kn,
+                                 int dim, long nsamples,
+                                 const complex<float>* fftx,
+                                 const complex<float>* ffty,
+                                 const complex<float>* fftz,
+                                 int N1, int N2, int N3) {
 
-const float PI = 3.14159265358979323846;
-
-extern "C" __global__
-void vecbispectrum3Df(float* bire, float* biim, float* biconorm, int* count, int* bind,
-                      int npix, const float* randsamples,
-                      float* kn, int dim, int nsamples,
-                      const complex<float>* fftx, const complex<float>* ffty, const complex<float>* fftz, 
-                      int N1, int N2, int N3) {
-
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    long idx = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (idx > nsamples*npix - 1) { return; }
-    
+
     int l = idx / nsamples;
     int k = idx % nsamples;
 
@@ -901,10 +870,10 @@ void vecbispectrum3Df(float* bire, float* biim, float* biconorm, int* count, int
     float sinphi1, sinphi2;
 
     // Read random samples
-    phi1 = randsamples[k] * 2*PI;
-    phi2 = randsamples[k+nsamples] * 2*PI;
-    costheta1 = 2*randsamples[k+2*nsamples]-1;
-    costheta2 = 2*randsamples[k+3*nsamples]-1;
+    phi1 = samples[k] * 2*PIf;
+    phi2 = samples[k+nsamples] * 2*PIf;
+    costheta1 = 2*samples[k+2*nsamples]-1;
+    costheta2 = 2*samples[k+3*nsamples]-1;
 
     // Compute coordinates along spherical shells
     sincos(phi1, &sinphi1, &cosphi1);
@@ -939,7 +908,7 @@ void vecbispectrum3Df(float* bire, float* biim, float* biconorm, int* count, int
     __syncthreads();
 
     // Map frequency domain to index domain
-    int q1i, q1j, q1k, q2i, q2j, q2k, q3i, q3j, q3k;
+    long q1i, q1j, q1k, q2i, q2j, q2k, q3i, q3j, q3k;
 
     if (k1i < 0) { q1i = k1i + N1; } else { q1i = k1i; }
     if (k1j < 0) { q1j = k1j + N2; } else { q1j = k1j; }
@@ -954,14 +923,14 @@ void vecbispectrum3Df(float* bire, float* biim, float* biconorm, int* count, int
     if (k3k < 0) { q3k = k3k + N3; } else { q3k = k3k; }
 
     // Map multi-dimensional indices to 1-dimensional indices
-    int idx1 = (q1i*N3 + q1j)*N2 + q1k;
-    int idx2 = (q2i*N3 + q2j)*N2 + q2k;
-    int idx3 = (q3i*N3 + q3j)*N2 + q3k;
+    long idx1 = (q1i*N3 + q1j)*N2 + q1k;
+    long idx2 = (q2i*N3 + q2j)*N2 + q2k;
+    long idx3 = (q3i*N3 + q3j)*N2 + q3k;
 
     // Sample correlation function
     complex<float> sample, samplex, sampley, samplez;
     float mod, re, im;
-    
+
     samplex = fftx[idx1] * fftx[idx2] * conj(fftx[idx3]);
     sampley = ffty[idx1] * ffty[idx2] * conj(ffty[idx3]);
     samplez = fftz[idx1] * fftz[idx2] * conj(fftz[idx3]);
@@ -978,22 +947,17 @@ void vecbispectrum3Df(float* bire, float* biim, float* biconorm, int* count, int
     count[idx] = 1;
 
 }
-''', 'vecbispectrum3Df')
 
 
-_kernel2Dvecf = cp.RawKernel(r'''
-# include <cupy/complex.cuh>
+__global__ void bispectrumVec2Df(float* bire, float* biim, float* biconorm,
+                                 int* count, int* bind,
+                                 long npix, const float* samples,
+                                 float* kn, int dim, long nsamples,
+                                 const complex<float>* fftx,
+                                 const complex<float>* ffty,
+                                 int N1, int N2) {
 
-const float PI = 3.14159265358979323846;
-
-extern "C" __global__
-void vecbispectrum2Df(float* bire, float* biim, float* biconorm, int* count, int* bind,
-                      int npix, const float* randsamples,
-                      float* kn, int dim, int nsamples,
-                      const complex<float>* fftx, const complex<float>* ffty,
-                      int N1, int N2) {
-
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    long idx = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (idx > nsamples*npix - 1) { return; }
 
@@ -1009,8 +973,8 @@ void vecbispectrum2Df(float* bire, float* biim, float* biconorm, int* count, int
     float sinphi1, sinphi2;
 
     // Read random samples
-    phi1 = randsamples[k] * 2*PI;
-    phi2 = randsamples[k+nsamples] * 2*PI;
+    phi1 = samples[k] * 2*PIf;
+    phi2 = samples[k+nsamples] * 2*PIf;
 
     // Compute coordinates along spherical shells
     sincos(phi1, &sinphi1, &cosphi1);
@@ -1040,7 +1004,7 @@ void vecbispectrum2Df(float* bire, float* biim, float* biconorm, int* count, int
     __syncthreads();
 
     // Map frequency domain to index domain
-    int q1i, q1j, q2i, q2j, q3i, q3j;
+    long q1i, q1j, q2i, q2j, q3i, q3j;
 
     if (k1i < 0) { q1i = k1i + N1; } else { q1i = k1i; }
     if (k1j < 0) { q1j = k1j + N2; } else { q1j = k1j; }
@@ -1052,9 +1016,9 @@ void vecbispectrum2Df(float* bire, float* biim, float* biconorm, int* count, int
     if (k3j < 0) { q3j = k3j + N2; } else { q3j = k3j; }
 
     // Map multi-dimensional indices to 1-dimensional indices
-    int idx1 = (q1i*N2 + q1j);
-    int idx2 = (q2i*N2 + q2j);
-    int idx3 = (q3i*N2 + q3j);
+    long idx1 = (q1i*N2 + q1j);
+    long idx2 = (q2i*N2 + q2j);
+    long idx3 = (q3i*N2 + q3j);
 
     // Sample correlation function
     complex<float> samplex, sampley, sample; 
@@ -1074,7 +1038,8 @@ void vecbispectrum2Df(float* bire, float* biim, float* biconorm, int* count, int
     count[idx] = 1;
 
 }
-''', 'vecbispectrum2Df')
+
+}''')
 
 
 if __name__ == '__main__':
@@ -1087,10 +1052,13 @@ if __name__ == '__main__':
     data = hdul[0].data.astype(np.float64)
 
     # Calculate
-    bispec, bicoh, kn = bispec(data,
-                               nsamples=int(1e6),
-                               progress=True,
-                               mean_subtract=True)
+    bispec, bicoh, kn = bispectrum(data,
+                                   vector=False,
+                                   double=True,
+                                   chunks=64,
+                                   nsamples=int(1e5),
+                                   progress=True,
+                                   mean_subtract=True)
     print(bispec.mean(), bicoh.mean())
 
     # Plot

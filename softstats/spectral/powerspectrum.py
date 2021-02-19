@@ -159,7 +159,7 @@ def powerspectrum(data, vector=False, real=True, compute_sqr=True, average=False
     del density, kr
 
     if bench:
-        print("Took {:.06f} s".format(time() - t0))
+        print(f"Time: {time() - t0:.04f} s")
 
     return spectrum, kn
 

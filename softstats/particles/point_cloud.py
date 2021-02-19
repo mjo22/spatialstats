@@ -6,9 +6,10 @@ for a set of particles.
 import numpy as np
 import scipy.spatial as ss
 import numba as nb
+from time import time
 
 
-def rdf(points, boxsize, rmax=None, **kwargs):
+def rdf(points, boxsize, rmax=None, bench=False, **kwargs):
     """
     Calculate the radial distribution function
     for a group of particles in 2D or 3D.
@@ -48,6 +49,9 @@ def rdf(points, boxsize, rmax=None, **kwargs):
     if ndim not in [2, 3]:
         raise ValueError("Dimension of space must be 2 or 3")
 
+    if bench:
+        t0 = time()
+
     # Periodic boundary conditions
     impose_pbc(points, boxsize)
 
@@ -58,6 +62,10 @@ def rdf(points, boxsize, rmax=None, **kwargs):
     # Get g(r)
     r, gr = gen_rdf(rjk, N, N/(np.prod(boxsize)),
                     rmax=rmax, **kwargs)
+
+    if bench:
+        print(f"Time: {time() - t0:.04f} s")
+
     return gr, r
 
 

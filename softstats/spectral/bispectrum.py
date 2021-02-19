@@ -22,7 +22,7 @@ from astropy.utils.console import ProgressBar
 
 
 def bispectrum(data, vector=False, nsamples=100000,
-               mean_subtract=False, seed=None, nchunks=None,
+               mean_subtract=False, seed=None, chunks=None,
                npts=None, kmin=None, kmax=None,
                bench=True, progress=False, use_pyfftw=False, **kwargs):
     """
@@ -44,16 +44,16 @@ def bispectrum(data, vector=False, nsamples=100000,
     nsamples : int
         The number of triangles to sample for each
         pixel. For sufficiently large nsamples and
-        small nchunks, the user may receive an OutOfMemoryError.
+        large chunks, the user may receive an OutOfMemoryError.
     mean_subtract : bool
         Subtract mean off of image data to highlight
         non-linearities in bicoherence
     seed : bool
         Random number seed
-    nchunks : int
-        The number of iterations to calculate the
+    chunks : int
+        Determines the number of iterations to calculate the
         bispectrum. For sufficiently large nsamples and
-        small nchunks, the user may receive an OutOfMemoryError.
+        large chunks, the user may receive an MemoryError.
     npts : int
         Number of wavenumbers in bispectrum calculation
     kmin : int
@@ -83,13 +83,13 @@ def bispectrum(data, vector=False, nsamples=100000,
         ncomp = data.shape[0]
         shape = data[0].shape
         norm = float(data[0].size)**3
-        kernel = _kernel3Dvec if ndim == 3 else _kernel2Dvec
+        kernel = _bispectrumVec3D if ndim == 3 else _bispectrumVec2D
     else:
         N, ndim = max(data.shape), data.ndim
         ncomp = 1
         shape = data.shape
         norm = float(data.size)**3
-        kernel = _kernel3D if ndim == 3 else _kernel2D
+        kernel = _bispectrum3D if ndim == 3 else _bispectrum2D
 
     if ndim not in [2, 3]:
         raise ValueError("Image must be a 2D or 3D")
@@ -99,9 +99,9 @@ def bispectrum(data, vector=False, nsamples=100000,
 
     # Geometry of output image
     kmax = int(N/2) if kmax is None else int(kmax)
-    kmin = 0 if kmin is None else int(kmin)
-    dim = kmax-kmin if npts is None else npts
-    nchunks = dim if nchunks is None else nchunks
+    kmin = 1 if kmin is None else int(kmin)
+    dim = kmax-kmin+1 if npts is None else npts
+    chunks = dim if chunks is None else chunks
     kn = np.linspace(kmin, kmax, dim, dtype=float, endpoint=False)
 
     if kmax > N//2:
@@ -138,6 +138,10 @@ def bispectrum(data, vector=False, nsamples=100000,
 
     def dispatch(bind, buf, out, cbuf, count):
 
+        buf[...] = 0.
+        cbuf[...] = 0.
+        out[...] = 0.
+
         npix = np.int32(bind.size)
 
         birebuf, biimbuf, binormbuf = buf[0], buf[1], buf[2]
@@ -151,30 +155,30 @@ def bispectrum(data, vector=False, nsamples=100000,
         count[:] = np.sum(cbuf, axis=1)
 
     # Chunk size
-    chunk = dim**2//nchunks
-    if dim**2 % nchunks != 0:
-        msg = f"nchunks {nchunks} must divide squared image dimension {dim}"
+    nchunks = dim**2//chunks
+    if dim**2 % chunks != 0:
+        msg = f"chunks {chunks} must divide squared image dimension {dim}"
         raise ValueError(msg)
 
     # Catch memory errors. Larger datasets require less parallelization.
     try:
-        buf = np.zeros((3, chunk, nsamples), dtype=float)
-        cbuf = np.zeros((chunk, nsamples), dtype=np.int32)
+        buf = np.zeros((3, chunks, nsamples), dtype=float)
+        cbuf = np.zeros((chunks, nsamples), dtype=np.int32)
     except MemoryError as err:
-        msg = f"Out of memory allocating buffers of shape {(chunk, nsamples)}. "
-        msg += "Try increasing nchunks."
+        msg = f"Out of memory allocating buffers of shape {(chunks, nsamples)}. "
+        msg += "Try decreasing chunks."
         raise ValueError(msg) from err
 
     if progress:
         bar = ProgressBar(nchunks)
 
-    # Calculate chunk pixels at a time
+    # Calculate chunks pixels at a time
     result = np.zeros((3, npix), dtype=float)
-    out = np.zeros((3, chunk), dtype=float)
-    count = np.zeros(chunk, dtype=np.int32)
+    out = np.zeros((3, chunks), dtype=float)
+    count = np.zeros(chunks, dtype=np.int32)
     bire, biim, biconorm = result[0], result[1], result[2]
     for i in range(nchunks):
-        start, stop = i*chunk, (i+1)*chunk
+        start, stop = i*chunks, (i+1)*chunks
         ind = bind[start:stop]
         dispatch(ind, buf, out, cbuf, count)
         bire[start:stop] = out[0]/count
@@ -193,7 +197,9 @@ def bispectrum(data, vector=False, nsamples=100000,
     del buf, cbuf, result, count, out, bire, biim, bind, biconorm
 
     if bench:
-        print(f"\nTime: {time() - t0:.04f}")
+        if progress:
+            print()
+        print(f"Time: {time() - t0:.04f} s")
 
     return bispec, bicoh, kn
 
@@ -248,8 +254,8 @@ def fftn(image, overwrite_input=True, threads=-1, **kwargs):
 
 
 @nb.njit(cache=True, parallel=True)
-def _kernel3D(birebuf, biimbuf, binormbuf, count, bind, npixels,
-              kn, dim, nsamples, fft, N1, N2, N3):
+def _bispectrum3D(birebuf, biimbuf, binormbuf, count, bind, npixels,
+                  kn, dim, nsamples, fft, N1, N2, N3):
     for idx in nb.prange(npixels*nsamples):
 
         l = idx // nsamples
@@ -308,8 +314,8 @@ def _kernel3D(birebuf, biimbuf, binormbuf, count, bind, npixels,
 
 
 @nb.njit(cache=True, parallel=True)
-def _kernel2D(birebuf, biimbuf, binormbuf, count, bind, npixels,
-              kn, dim, nsamples, fft, N1, N2):
+def _bispectrum2D(birebuf, biimbuf, binormbuf, count, bind, npixels,
+                  kn, dim, nsamples, fft, N1, N2):
     for idx in nb.prange(npixels*nsamples):
         l = idx // nsamples
         k = idx % nsamples
@@ -357,8 +363,8 @@ def _kernel2D(birebuf, biimbuf, binormbuf, count, bind, npixels,
 
 
 @nb.njit(cache=True, parallel=True)
-def _kernel3Dvec(birebuf, biimbuf, binormbuf, count, bind, npixels,
-                 kn, dim, nsamples, fftx, ffty, fftz, N1, N2, N3):
+def _bispectrumVec3D(birebuf, biimbuf, binormbuf, count, bind, npixels,
+                     kn, dim, nsamples, fftx, ffty, fftz, N1, N2, N3):
     for idx in nb.prange(npixels*nsamples):
 
         l = idx // nsamples
@@ -421,8 +427,8 @@ def _kernel3Dvec(birebuf, biimbuf, binormbuf, count, bind, npixels,
 
 
 @nb.njit(cache=True, parallel=True)
-def _kernel2Dvec(birebuf, biimbuf, binormbuf, count, bind, npixels,
-                 kn, dim, nsamples, fftx, ffty, N1, N2):
+def _bispectrumVec2D(birebuf, biimbuf, binormbuf, count, bind, npixels,
+                     kn, dim, nsamples, fftx, ffty, N1, N2):
     for idx in nb.prange(npixels*nsamples):
         l = idx // nsamples
         k = idx % nsamples
@@ -481,8 +487,8 @@ if __name__ == '__main__':
     image = hdul[0].data.astype(np.float64)  # [:512, :512, :512]
 
     # Calculate
-    bispec, bicoh, kn = bispec(image, nsamples=int(1e6),
-                               progress=True, mean_subtract=True)
+    bispec, bicoh, kn = bispectrum(image, nsamples=int(1e4), chunks=64,
+                                   progress=True, mean_subtract=True)
     print(bispec.mean(), bicoh.mean())
 
     # Plot

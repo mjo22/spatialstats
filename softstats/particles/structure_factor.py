@@ -7,10 +7,11 @@ import numpy as np
 from scipy.integrate import simps
 from scipy.special import jv
 from .point_cloud import rdf
+from time import time
 
 
 def structure_factor(points, boxsize, return_rdf=False,
-                     qmin=None, qmax=None, npts=None, **kwargs):
+                     qmin=None, qmax=None, dq=None, bench=False, **kwargs):
     """
     Calculate the isotropic static structure factor from
     a set of particles radial distribution function.
@@ -29,10 +30,12 @@ def structure_factor(points, boxsize, return_rdf=False,
     --------
     return_rdf : bool
         Return the rdf used to calculate structure factor.
-    qmin : int
-        Minimum wavenumber index for Sq
-    qmax : int
-        Maximum wavenumber index for Sq
+    qmin : float
+        Minimum wavenumber for Sq
+    qmax : float
+        Maximum wavenumber for Sq
+    dq : float
+        Wavenumber step size
 
     **kwargs passed to rdf.
 
@@ -51,10 +54,13 @@ def structure_factor(points, boxsize, return_rdf=False,
         raise ValueError("Dimension of space must be 2 or 3")
 
     # Generate wavenumbers
-    qmin = 1 if qmin is None else qmin
-    qmax = 100 if qmax is None else qmax
-    npts = qmax-qmin+1 if npts is None else npts
-    q = (2*np.pi / max(boxsize))*np.linspace(qmin, qmax, npts)
+    dq = (2*np.pi / max(boxsize)) if dq is None else dq
+    qmin = dq if qmin is None else qmin
+    qmax = 100*dq if qmax is None else qmax
+    q = np.arange(qmin, qmax+dq, dq)
+
+    if bench:
+        t0 = time()
 
     # Calculate g(r) and density for integration
     gr, r = rdf(points, boxsize, **kwargs)
@@ -78,6 +84,9 @@ def structure_factor(points, boxsize, return_rdf=False,
     for j in range(len(q)):
         Sq.append(S(q[j]))
     Sq = np.array(Sq)
+
+    if bench:
+        print(f"Time: {time() - t0:.04f} s")
 
     args = (Sq, q) if not return_rdf else (Sq, q, gr, r)
 
