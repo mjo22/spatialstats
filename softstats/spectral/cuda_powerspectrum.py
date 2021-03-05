@@ -19,8 +19,10 @@ import cupy as cp
 from cupyx.scipy import fft as cufft
 
 
-def powerspectrum(data, vector=False, real=True, compute_sqr=True, average=False,
-                  kmin=None, kmax=None, npts=None, bench=False, **kwargs):
+def powerspectrum(data, vector=False, real=True, average=False,
+                  kmin=None, kmax=None, npts=None,
+                  compute_fft=True, compute_sqr=True, bench=False,
+                  **kwargs):
     """
     Returns the radially averaged power spectrum
     of real signal on 2 or 3 dimensional scalar or
@@ -30,7 +32,7 @@ def powerspectrum(data, vector=False, real=True, compute_sqr=True, average=False
     ----------
     data : np.ndarray
         Real or complex valued 2D or 3D vector or scalar data.
-        If vector data, the shape should be (n, d1, d2) or 
+        If vector data, the shape should be (n, d1, d2) or
         (n, d1, d2, d3) where n is the number of vector components
         and di is the ith dimension of the image.
 
@@ -96,7 +98,10 @@ def powerspectrum(data, vector=False, real=True, compute_sqr=True, average=False
     for i in range(ncomp):
         temp = cp.asarray(data[i]) if vector else cp.asarray(data)
         comp[...] = temp
-        fft = cufftn(comp, **kwargs)
+        if compute_fft:
+            fft = cufftn(comp, **kwargs)
+        else:
+            fft = comp
         if density is None:
             fftshape = fft.shape
             density = cp.zeros(fft.shape)

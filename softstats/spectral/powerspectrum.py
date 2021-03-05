@@ -20,9 +20,10 @@ except Exception as err:
     pyfftw = None
 
 
-def powerspectrum(data, vector=False, real=True, compute_sqr=True, average=False,
-                  kmin=None, kmax=None, npts=None, bench=False,
-                  use_pyfftw=False, **kwargs):
+def powerspectrum(data, vector=False, real=True, average=False,
+                  kmin=None, kmax=None, npts=None,
+                  compute_fft=True, compute_sqr=True,
+                  bench=False, use_pyfftw=False, **kwargs):
     """
     Returns the radially averaged power spectrum
     of real signal on 2 or 3 dimensional scalar or
@@ -32,14 +33,14 @@ def powerspectrum(data, vector=False, real=True, compute_sqr=True, average=False
     ----------
     data : np.ndarray
         Real or complex valued 2D or 3D vector or scalar data.
-        If vector data, the shape should be (n, d1, d2) or 
+        If vector data, the shape should be (n, d1, d2) or
         (n, d1, d2, d3) where n is the number of vector components
         and di is the ith dimension of the image.
 
     Keywords
     --------
     vector : bool
-        Specify whether user has passed scalar or 
+        Specify whether user has passed scalar or
         vector data.
     kmin : float or int
         Minimum k in powerspectrum bins. If None,
@@ -51,7 +52,7 @@ def powerspectrum(data, vector=False, real=True, compute_sqr=True, average=False
         Number of modes between [kmin, kmax]
     average : bool
         If True, average over values in a given
-        bin. If False, add values. 
+        bin. If False, add values.
     bench : bool
         Print message for time of calculation
 
@@ -93,14 +94,17 @@ def powerspectrum(data, vector=False, real=True, compute_sqr=True, average=False
     norm = np.float64(comp.size)
     for i in range(ncomp):
         comp[...] = data[i] if vector else data
-        # Compute fft of a component
-        if use_pyfftw:
-            fft = fftn(comp, **kwargs)
-        else:
-            if real:
-                fft = np.fft.rfftn(comp, **kwargs)
+        if compute_fft:
+            # Compute fft of a component
+            if use_pyfftw:
+                fft = fftn(comp, **kwargs)
             else:
-                fft = np.fft.fftn(comp, **kwargs)
+                if real:
+                    fft = np.fft.rfftn(comp, **kwargs)
+                else:
+                    fft = np.fft.fftn(comp, **kwargs)
+        else:
+            fft = comp
         # Compute amplitudes
         if density is None:
             fftshape = fft.shape

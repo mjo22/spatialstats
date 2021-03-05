@@ -23,7 +23,7 @@ from astropy.utils.console import ProgressBar
 
 def bispectrum(data, vector=False, nsamples=100000,
                mean_subtract=False, seed=None, chunks=None,
-               npts=None, kmin=None, kmax=None,
+               npts=None, kmin=None, kmax=None, compute_fft=True,
                bench=True, progress=False, use_pyfftw=False, **kwargs):
     """
     Compute the bispectrum of 2D or 3D data with
@@ -113,13 +113,16 @@ def bispectrum(data, vector=False, nsamples=100000,
         comp = np.empty(shape, dtype=complex)
         temp = data[i] if vector else data
         comp[...] = temp
-        # Subtract mean of data to highlight non-linearities
-        if mean_subtract:
-            comp[...] -= comp.mean()
-        if use_pyfftw:
-            fftcomp = fftn(comp, **kwargs)
+        if compute_fft:
+            # Subtract mean of data to highlight non-linearities
+            if mean_subtract:
+                comp[...] -= comp.mean()
+            if use_pyfftw:
+                fftcomp = fftn(comp, **kwargs)
+            else:
+                fftcomp = np.fft.fftn(comp, **kwargs)
         else:
-            fftcomp = np.fft.fftn(comp, **kwargs)
+            fftcomp = comp
         fft.append(fftcomp)
         del temp
 
@@ -300,7 +303,7 @@ def _bispectrum3D(birebuf, biimbuf, binormbuf, count, bind, npixels,
         k3j = np.int32(np.rint(k3y))
         k3k = np.int32(np.rint(k3z))
 
-        if k3i > N1//2 or k3j > N2//2 or k3k > N3//2:
+        if np.abs(k3i) > N1//2 or np.abs(k3j) > N2//2 or np.abs(k3k) > N3//2:
             continue
 
         sample = fft[k1i, k1j, k1k] * fft[k2i, k2j, k2k] \
@@ -349,7 +352,7 @@ def _bispectrum2D(birebuf, biimbuf, binormbuf, count, bind, npixels,
         k2j = np.int32(np.rint(k2y))
         k3j = np.int32(np.rint(k3y))
 
-        if k3i > N1//2 or k3j > N2//2:
+        if np.abs(k3i) > N1//2 or np.abs(k3j) > N2//2:
             continue
 
         sample = fft[k1i, k1j] * fft[k2i, k2j] \
@@ -409,7 +412,7 @@ def _bispectrumVec3D(birebuf, biimbuf, binormbuf, count, bind, npixels,
         k3j = np.int32(np.rint(k3y))
         k3k = np.int32(np.rint(k3z))
 
-        if k3i > N1//2 or k3j > N2//2 or k3k > N3//2:
+        if np.abs(k3i) > N1//2 or np.abs(k3j) > N2//2 or np.abs(k3k) > N3//2:
             continue
 
         sample = fftx[k1i, k1j, k1k] * fftx[k2i, k2j, k2k] \
@@ -462,7 +465,7 @@ def _bispectrumVec2D(birebuf, biimbuf, binormbuf, count, bind, npixels,
         k3i = np.int32(np.rint(k3x))
         k3j = np.int32(np.rint(k3y))
 
-        if k3i > N1//2 or k3j > N2//2:
+        if np.abs(k3i) > N1//2 or np.abs(k3j) > N2//2:
             continue
 
         sample = fftx[k1i, k1j] * fftx[k2i, k2j] \

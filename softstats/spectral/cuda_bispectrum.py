@@ -26,7 +26,7 @@ from cupy.cuda.memory import OutOfMemoryError
 
 def bispectrum(data, nsamples=100000, vector=False, double=True,
                mean_subtract=False, seed=None, chunks=None,
-               npts=None, kmin=None, kmax=None,
+               npts=None, kmin=None, kmax=None, compute_fft=True,
                bench=True, progress=False, **kwargs):
     """
     Compute the bispectrum of 2D or 3D data with
@@ -126,10 +126,13 @@ def bispectrum(data, nsamples=100000, vector=False, double=True,
     for i in range(ncomp):
         temp = data[i] if vector else data
         comp = cp.asarray(temp, dtype=complex)
-        # Subtract mean of data to highlight non-linearities
-        if mean_subtract:
-            comp[...] -= comp.mean()
-        fft = cufftn(comp, **kwargs)
+        if compute_fft:
+            # Subtract mean of data to highlight non-linearities
+            if mean_subtract:
+                comp[...] -= comp.mean()
+            fft = cufftn(comp, **kwargs)
+        else:
+            fft = comp
         fftflat.append(fft.ravel(order='C'))
         del fft, comp
         mempool.free_all_blocks()
