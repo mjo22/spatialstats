@@ -24,7 +24,7 @@ from astropy.utils.console import ProgressBar
 def bispectrum(data, vector=False, nsamples=100000,
                mean_subtract=False, seed=None, chunks=None,
                npts=None, kmin=None, kmax=None, compute_fft=True,
-               bench=True, progress=False, use_pyfftw=False, **kwargs):
+               bench=False, progress=False, use_pyfftw=False, **kwargs):
     """
     Compute the bispectrum of 2D or 3D data with
     numba acceleration in double-precision.

@@ -108,7 +108,7 @@ def powerspectrum(data, vector=False, real=True, average=False,
         if compute_sqr:
             density[...] += mod_squared(fft)
         else:
-            density[...] += cp.abs(fft)
+            density[...] += np.real(fft)
         del fft, temp
         mempool.free_all_blocks()
         pinned_mempool.free_all_blocks()
@@ -287,7 +287,7 @@ if __name__ == '__main__':
     data = fc.cube
 
     # psdFC = fc.iso_power_spec()
-    psd, kn = pspec(data, real=True, bench=True, average=True)
+    psd, kn = powerspectrum(data, real=True, bench=True, average=True)
 
     print(psd.mean())
 

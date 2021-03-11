@@ -112,7 +112,7 @@ def powerspectrum(data, vector=False, real=True, average=False,
         if compute_sqr:
             density[...] += np.real(fft*np.conj(fft))
         else:
-            density[...] += np.abs(fft)
+            density[...] += np.real(fft)
         del fft
 
     # Normalize FFT

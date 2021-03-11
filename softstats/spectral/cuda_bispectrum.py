@@ -27,7 +27,7 @@ from cupy.cuda.memory import OutOfMemoryError
 def bispectrum(data, nsamples=100000, vector=False, double=True,
                mean_subtract=False, seed=None, chunks=None,
                npts=None, kmin=None, kmax=None, compute_fft=True,
-               bench=True, progress=False, **kwargs):
+               bench=False, progress=False, **kwargs):
     """
     Compute the bispectrum of 2D or 3D data with
     CUDA acceleration in single or double-precision.
@@ -112,7 +112,7 @@ def bispectrum(data, nsamples=100000, vector=False, double=True,
     kmax = cp.int32(N/2) if kmax is None else cp.int32(kmax)
     kmin = cp.int32(1.) if kmin is None else cp.int32(kmin)
     dim = kmax-kmin+1 if npts is None else cp.int32(npts)
-    chunks = dim if chunks is None else chunks
+    chunks = int(dim) if chunks is None else chunks
     kn = cp.linspace(kmin, kmax, dim, dtype=float, endpoint=False)
 
     if kmax > N//2:
