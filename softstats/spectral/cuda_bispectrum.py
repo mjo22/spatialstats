@@ -2,7 +2,7 @@
 Bispectrum calculation using CUDA acceleration.
 
 This implementation works on 2D and 3D rectangular domains for real
-or complex valued data. It uniformly samples over all
+or complex valued data. It uses uniform sampling over all
 triangles in fourier space for a given two wavenumbers.
 
 See https://turbustat.readthedocs.io/en/latest/tutorials/statistics/bispectrum_example.html for details about the bispectrum.
@@ -36,7 +36,7 @@ def bispectrum(data, nsamples=100000, vector=False, double=True,
     ----------
     data : np.ndarray
         Real or complex valued 2D or 3D vector or scalar data.
-        If vector data, the shape should be (n, d1, d2) or 
+        If vector data, the shape should be (n, d1, d2) or
         (n, d1, d2, d3) where n is the number of vector components
         and di is the ith dimension of the image.
 
@@ -88,10 +88,11 @@ def bispectrum(data, nsamples=100000, vector=False, double=True,
     else:
         float, complex = cp.float32, cp.complex64
     if vector:
-        N, ndim = max(data[0].shape), data[0].ndim
+        temp = data[0]
+        N, ndim = max(temp.shape), temp.ndim
         ncomp = data.shape[0]
-        shape = data[0].shape
-        norm = float(data[0].size)**3
+        shape = temp.shape
+        norm = float(temp.size)**3
     else:
         N, ndim = max(data.shape), data.ndim
         ncomp = 1
@@ -1048,11 +1049,10 @@ __global__ void bispectrumVec2Df(float* bire, float* biim, float* biconorm,
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
-    from astropy.io import fits
 
-    # Open file
-    hdul = fits.open('dens.fits.gz')
-    data = hdul[0].data.astype(np.float64)
+    # Generate noise
+    N = 128
+    data = np.random.normal(size=N**2).reshape((N, N))
 
     # Calculate
     bispec, bicoh, kn = bispectrum(data,

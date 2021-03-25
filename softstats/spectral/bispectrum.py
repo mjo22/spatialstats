@@ -2,8 +2,8 @@
 Bisprectrum calculation using numba acceleration
 
 This implementation works on 2D and 3D rectangular domains for real
-or complex valued data. It uniformly samples over all
-triangles in fourier space for a given two wavenumbers.
+or complex valued data. It includes code for exact bispectrum
+calculations and bispectrum calculations using uniform sampling.
 
 See https://turbustat.readthedocs.io/en/latest/tutorials/statistics/bispectrum_example.html for more details.
 
@@ -21,19 +21,31 @@ from time import time
 from astropy.utils.console import ProgressBar
 
 
-def bispectrum(data, vector=False, nsamples=100000,
-               mean_subtract=False, seed=None, chunks=None,
-               npts=None, kmin=None, kmax=None, compute_fft=True,
-               bench=False, progress=False, use_pyfftw=False, **kwargs):
+def bispectrum(*args, nsamples=100000, **kwargs):
     """
-    Compute the bispectrum of 2D or 3D data with
-    numba acceleration in double-precision.
+    Bispectrum wrapper that chooses between exact
+    and sampling implementations.
+    """
+    if nsamples is None:
+        result = bispectrum_exact(*args, **kwargs)
+    else:
+        result = bispectrum_sampled(*args, nsamples=nsamples, **kwargs)
+    return result
+
+
+def bispectrum_sampled(data, vector=False, nsamples=100000,
+                       mean_subtract=False, seed=None, chunks=None,
+                       npts=None, kmin=None, kmax=None,
+                       compute_fft=True, use_pyfftw=False,
+                       bench=False, progress=False, **kwargs):
+    """
+    Compute the bispectrum of 2D or 3D data using uniform sampling.
 
     Parameters
     ----------
     data : np.ndarray
         Real or complex valued 2D or 3D vector or scalar data.
-        If vector data, the shape should be (n, d1, d2) or 
+        If vector data, the shape should be (n, d1, d2) or
         (n, d1, d2, d3) where n is the number of vector components
         and di is the ith dimension of the image.
 
@@ -60,6 +72,11 @@ def bispectrum(data, vector=False, nsamples=100000,
         Minimum wavenumber in bispectrum calculation
     kmax : int
         Maximum wavenumber in bispectrum calculation
+    compute_fft : bool
+        If False, do not take the FFT of the input data.
+    use_pyfftw : bool
+        If True, use function fftn (below) to calculate
+        FFTs using pyfftw. If False, use numpy implementation.
     bench : bool
         Return compute times of calculation
     progress : bool
@@ -79,10 +96,11 @@ def bispectrum(data, vector=False, nsamples=100000,
     float, complex = np.float64, np.complex128
 
     if vector:
-        N, ndim = max(data[0].shape), data[0].ndim
+        temp = data[0]
+        N, ndim = max(temp.shape), temp.ndim
         ncomp = data.shape[0]
-        shape = data[0].shape
-        norm = float(data[0].size)**3
+        shape = temp.shape
+        norm = float(temp.size)**3
         kernel = _bispectrumVec3D if ndim == 3 else _bispectrumVec2D
     else:
         N, ndim = max(data.shape), data.ndim
@@ -480,17 +498,162 @@ def _bispectrumVec2D(birebuf, biimbuf, binormbuf, count, bind, npixels,
         count[l, k] = 1
 
 
+def bispectrum_exact(data, kmin=None, kmax=None,
+                     mean_subtract=False, compute_fft=True, **kwargs):
+    """
+    Compute exact bispectrum in 2D or 3D.
+
+    Arguments
+    ---------
+    data : np.ndarray
+        Real or complex valued 2D or 3D scalar data.
+        The shape should be (d1, d2) or (d1, d2, d3)
+        where di is the ith dimension of the image.
+
+    Keywords
+    --------
+    kmin : int
+        Minimum wavenumber in bispectrum calculation.
+    kmax : int
+        Maximum wavenumber in bispectrum calculation.
+    mean_subtract : bool
+        Subtract mean off of image data to highlight
+        non-linearities in bicoherence.
+    compute_fft : bool
+        If False, do not take the FFT of the input data.
+
+    **kwargs passed to fftn (defined below)
+
+    Returns
+    -------
+    bispectrum : np.ndarray
+        Complex-valued 2D image
+    bicoherence : np.ndarray
+        Real-valued normalized bispectrum
+    kn : np.ndarray
+        Wavenumbers along axis of bispectrum
+    """
+
+    N, ndim = max(data.shape), data.ndim
+    norm = float(data.size)**3
+
+    if ndim not in [2, 3]:
+        raise ValueError("Image must be a 2D or 3D")
+
+    # Geometry of output image
+    kmax = int(N/2) if kmax is None else int(kmax)
+    kmin = 1 if kmin is None else int(kmin)
+    kn = np.arange(kmin, kmax+1, 1, dtype=int)
+
+    # FFT
+    if compute_fft:
+        temp = data - data.mean() if mean_subtract else data
+        fft = np.fft.fftn(temp, **kwargs)
+    else:
+        fft = data
+
+    # Get binned radial coordinates of FFT
+    kcoords = np.meshgrid(*(ndim*[np.fft.fftfreq(N)*N]))
+    if ndim == 2:
+        kx, ky = [kv.astype(int) for kv in kcoords]
+        kr = np.sqrt(kx**2 + ky**2)
+    else:
+        kx, ky, kz = [kv.astype(int) for kv in kcoords]
+        kr = np.sqrt(kx**2 + ky**2 + kz**2)
+    kr = np.digitize(kr, np.arange(int(np.ceil(kr.max()))))-1
+
+    # Run main loop
+    if ndim == 2:
+        bispec, binorm = _bispectrumExact2D(kr, kx, ky, kn, fft, N)
+    else:
+        bispec, binorm = _bispectrumExact3D(kr, kx, ky, kz, kn, fft, N)
+
+    bicoh = np.abs(bispec) / binorm
+    bispec /= norm
+
+    return bispec, bicoh, kn
+
+
+@nb.njit(cache=True)
+def _bispectrumExact2D(kr, kx, ky, kn, fft, N):
+    bispec = np.zeros((kn.size, kn.size), dtype=np.complex128)
+    binorm = np.zeros((kn.size, kn.size), dtype=np.float64)
+    for i in range(kn.size):
+        k1ind = np.where(kr.ravel() == kn[i])
+        k1samples = fft.ravel()[k1ind]
+        nk1 = k1samples.size
+        for j in range(kn.size):
+            k2ind = np.where(kr.ravel() == kn[j])
+            k2samples = fft.ravel()[k2ind]
+            nk2 = k2samples.size
+            norm = nk1*nk2
+            for n in range(nk1):
+                ndx = k1ind[0][n]
+                k1x, k1y = kx.ravel()[ndx], ky.ravel()[ndx]
+                k1samp = fft[k1x, k1y]
+                for m in range(nk2):
+                    mdx = k2ind[0][m]
+                    k2x, k2y = kx.ravel()[mdx], ky.ravel()[mdx]
+                    k2samp = fft[k2x, k2y]
+                    k3x, k3y = k1x+k2x, k1y+k2y
+                    if np.abs(k3x) > N//2 or np.abs(k3y) > N//2:
+                        norm -= 1
+                    else:
+                        k3samp = np.conj(fft[k3x, k3y])
+                        sample = k1samp*k2samp*k3samp
+                        bispec[i, j] += sample
+                        binorm[i, j] += np.abs(sample)
+            bispec[i, j] /= norm
+            binorm[i, j] /= norm
+    return bispec, binorm
+
+
+@nb.njit(cache=True)
+def _bispectrumExact3D(kr, kx, ky, kz, kn, fft, N):
+    bispec = np.zeros((kn.size, kn.size), dtype=np.complex128)
+    binorm = np.zeros((kn.size, kn.size), dtype=np.float64)
+    for i in range(kn.size):
+        k1ind = np.where(kr.flat == kn[i])
+        k1samples = fft.flat[k1ind]
+        nk1 = k1samples.size
+        for j in range(kn.size):
+            k2ind = np.where(kr.flat == kn[j])
+            k2samples = fft.flat[k2ind]
+            nk2 = k2samples.size
+            norm = nk1*nk2
+            for n in range(nk1):
+                ndx = k1ind[0][n]
+                k1x, k1y, k1z = kx.flat[ndx], ky.flat[ndx], kz.flat[ndx]
+                k1samp = fft[k1x, k1y, k1z]
+                for m in range(nk2):
+                    mdx = k2ind[0][m]
+                    k2x, k2y, k2z = kx.flat[mdx], ky.flat[mdx], kz.flat[mdx]
+                    k2samp = fft[k2x, k2y, k2z]
+                    k3x, k3y, k3z = k1x+k2x, k1y+k2y, k1z+k2z
+                    if np.abs(k3x) > N//2 or np.abs(k3y) > N//2  \
+                       or np.abs(k3z) > N//2:
+                        norm -= 1
+                    else:
+                        k3samp = np.conj(fft[k3x, k3y, k3z])
+                        sample = k1samp*k2samp*k3samp
+                        bispec[i, j] += sample
+                        binorm[i, j] += np.abs(sample)
+            bispec[i, j] /= norm
+            binorm[i, j] /= norm
+    return bispec, binorm
+
+
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
     from astropy.io import fits
 
     # Open file
-    hdul = fits.open('dens.fits.gz')
-    image = hdul[0].data.astype(np.float64)  # [:512, :512, :512]
+    N = 128
+    data = np.random.normal(size=N**2).reshape((N, N))
 
     # Calculate
-    bispec, bicoh, kn = bispectrum(image, nsamples=int(1e4), chunks=64,
+    bispec, bicoh, kn = bispectrum(data, nsamples=int(1e4), chunks=64,
                                    progress=True, mean_subtract=True)
     print(bispec.mean(), bicoh.mean())
 
