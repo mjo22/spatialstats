@@ -113,7 +113,7 @@ def bispectrum(data, nsamples=100000, vector=False, double=True,
     kmin = cp.int32(1.) if kmin is None else cp.int32(kmin)
     dim = kmax-kmin+1 if npts is None else cp.int32(npts)
     chunks = int(dim) if chunks is None else chunks
-    kn = cp.linspace(kmin, kmax, dim, dtype=float, endpoint=False)
+    kn = cp.linspace(kmin, kmax, dim, dtype=float, endpoint=True)
 
     if kmax > N//2:
         raise ValueError(f"kmax should not exceed {N//2}")
