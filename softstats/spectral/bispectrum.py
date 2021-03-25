@@ -211,7 +211,7 @@ def bispectrum_sampled(data, vector=False, nsamples=100000,
     # Finalize and transfer to cpu
     bispectrum = bire + 1.j*biim
     bicoh = (np.abs(bispectrum) / biconorm).reshape((dim, dim))
-    bispec = bispectrum.reshape((dim, dim)) / (norm*nsamples)
+    bispec = bispectrum.reshape((dim, dim)) / norm
 
     # Release memory
     del fft, bispectrum

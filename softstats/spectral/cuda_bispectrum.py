@@ -211,7 +211,7 @@ def bispectrum(data, nsamples=100000, vector=False, double=True,
     # Finalize and transfer to cpu
     bispectrum = bire + 1.j*biim
     bicoh = cp.asnumpy(cp.abs(bispectrum) / biconorm).reshape((dim, dim))
-    bispec = cp.asnumpy(bispectrum).reshape((dim, dim)) / (norm)
+    bispec = cp.asnumpy(bispectrum).reshape((dim, dim)) / norm
     k = cp.asnumpy(kn)
 
     # Release memory
