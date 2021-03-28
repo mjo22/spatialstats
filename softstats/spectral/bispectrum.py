@@ -2,13 +2,11 @@
 Bisprectrum calculation using numba acceleration
 
 This implementation works on 2D and 3D rectangular domains for real
-or complex valued data. It includes code for exact bispectrum
-calculations and bispectrum calculations using uniform sampling.
-
-See https://turbustat.readthedocs.io/en/latest/tutorials/statistics/bispectrum_example.html for more details.
+or complex valued data. It can compute the bispectrum exactly or
+using uniform sampling.
 
 Author:
-    Michael J. O'Brien (2020)
+    Michael J. O'Brien (2021)
     Biophysical Modeling Group
     Center for Computational Biology
     Flatiron Institute
@@ -16,16 +14,15 @@ Author:
 
 import numpy as np
 import numba as nb
-import pyfftw
 from time import time
 
 
 def bispectrum(data, kmin=None, kmax=None,
                nsamples=None, mean_subtract=False,
                compute_fft=True, use_pyfftw=False,
-               bench=True, **kwargs):
+               bench=False, **kwargs):
     """
-    Compute bispectrum in 2D or 3D.
+    Compute the bispectrum of 2D or 3D real or complex valued data.
 
     Arguments
     ---------
@@ -40,11 +37,21 @@ def bispectrum(data, kmin=None, kmax=None,
         Minimum wavenumber in bispectrum calculation.
     kmax : int
         Maximum wavenumber in bispectrum calculation.
+    nsamples : int or np.ndarray
+        Number of sample triangles to take. This may be
+        an array of shape [kmax-kmin+1, kmax-kmin+1] to
+        specify the number of samples to take for a given
+        pixel.
     mean_subtract : bool
         Subtract mean off of image data to highlight
         non-linearities in bicoherence.
     compute_fft : bool
         If False, do not take the FFT of the input data.
+    use_pyfftw : bool
+        If True, use pyfftw (see function fftn below)
+        to compute the FFTs.
+    bench : bool
+        If True, print calculation time.
 
     **kwargs passed to fftn (defined below)
 
@@ -57,7 +64,7 @@ def bispectrum(data, kmin=None, kmax=None,
     kn : np.ndarray
         Wavenumbers along axis of bispectrum
     """
-
+    
     shape, ndim = nb.typed.List(data.shape), data.ndim
     norm = float(data.size)**3
 
@@ -132,7 +139,8 @@ def bispectrum(data, kmin=None, kmax=None,
     return bispec, bicoh, kn
 
 
-def fftn(image, overwrite_input=False, threads=-1, **kwargs):
+def fftn(image, overwrite_input=False, threads=-1,
+         dtype=np.complex128, **kwargs):
     """
     Calculate N-dimensional fft of image with pyfftw.
     See pyfftw.builders.fftn for kwargs documentation.
@@ -160,7 +168,9 @@ def fftn(image, overwrite_input=False, threads=-1, **kwargs):
         The fft. Will be the shape of the input image
         or the user specified shape.
     """
-    a = pyfftw.empty_aligned(image.shape, dtype=np.complex128)
+    import pyfftw
+
+    a = pyfftw.empty_aligned(image.shape, dtype=dtype)
     f = pyfftw.builders.fftn(a, overwrite_input=overwrite_input,
                              threads=threads, **kwargs)
     a[...] = image
@@ -182,7 +192,7 @@ def compute_bispectrum(kind, kcoords, fft, nsamples,
         for j in range(i+1):
             k2ind = kind[j]
             nk2 = k2ind.size
-            nsamp = nsamples[i, j]
+            nsamp = int(nsamples[i, j])
             if nsamp < nk1*nk2:
                 samp = np.random.randint(0, nk1*nk2, size=nsamp)
                 count = nsamp
@@ -190,13 +200,13 @@ def compute_bispectrum(kind, kcoords, fft, nsamples,
                 samp = np.arange(nk1*nk2)
                 count = nk1*nk2
             bispecbuf = np.zeros(count, dtype=np.complex128)
-            binormbuf = np.zeros(count)
-            countbuf = np.zeros(count, dtype=np.int8)
+            binormbuf = np.zeros(count, dtype=np.float64)
+            countbuf = np.zeros(count, dtype=np.int16)
             compute_pixel(k1ind, k2ind, kcoords, fft,
                           nk1, nk2, shape, samp, count,
                           bispecbuf, binormbuf, countbuf)
-            value = bispecbuf.sum() / countbuf.sum()
-            norm = binormbuf.sum() / countbuf.sum()
+            value = bispecbuf.sum() / np.float64(countbuf.sum())
+            norm = binormbuf.sum() / np.float64(countbuf.sum())
             bispec[i, j], bispec[j, i] = value, value
             binorm[i, j], binorm[j, i] = norm, norm
     return bispec, binorm
@@ -210,7 +220,7 @@ def compute_pixel3D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
     for idx in nb.prange(count):
         n, m = k1ind[samp[idx] % nk1], k2ind[samp[idx] // nk1]
         k1x, k1y, k1z = kx[n], ky[n], kz[n]
-        k2x, k2y, k2z = kx[m], ky[m], kz[n]
+        k2x, k2y, k2z = kx[m], ky[m], kz[m]
         k3x, k3y, k3z = k1x+k2x, k1y+k2y, k1z+k2z
         if np.abs(k3x) > Nx//2 or np.abs(k3y) > Ny//2 or np.abs(k3z) > Nz//2:
             continue
@@ -245,17 +255,11 @@ if __name__ == '__main__':
 
     # Open file
     N = 128
-    data = np.random.normal(size=N**2).reshape((N, N))+1
+    data = np.random.normal(size=N**3).reshape((N, N, N))+1
 
-    # Calculate
-    import os
-    #fn = os.path.expanduser("~/dev/pybispec/dens.fits.gz")
-    fn = "/mnt/home/mobrien/ceph/driving/b1p.05_r512_f7/data/dn_b1p.05_512_f7_500.fits"
-    data = fits.open(fn)[0].data.astype(np.float32).sum(axis=0)
-    kmin, kmax = 0, 32
-    bispec, bicoh, kn = bispectrum(data, nsamples=None, kmin=kmin, kmax=kmax,
-                                   mean_subtract=False,
-                                   bench=True)
+    kmin, kmax = 1, 64
+    bispec, bicoh, kn = bispectrum(data, nsamples=100000, kmin=kmin, kmax=kmax,
+                                   mean_subtract=True, bench=True)
     print(bispec.mean(), bicoh.mean())
     print(bicoh.max())
 
