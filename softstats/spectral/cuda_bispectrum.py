@@ -29,6 +29,8 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, double=True,
         Real or complex valued 2D or 3D scalar data.
         The shape should be (d1, d2) or (d1, d2, d3)
         where di is the ith dimension of the image.
+        Can be CPU or GPU data. If it is GPU data and
+        complex, it will be overwritten by default.
 
     Keywords
     --------
@@ -40,7 +42,7 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, double=True,
         Number of sample triangles to take. This may be
         an array of shape [kmax-kmin+1, kmax-kmin+1] to
         specify the number of samples to take for a given
-        pixel.
+        point.
     double : bool
         If False, do calculation in single precision.
     mean_subtract : bool
@@ -86,6 +88,49 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, double=True,
     if bench:
         t0 = time()
 
+    # Get binned radial coordinates of FFT
+    kv = cp.meshgrid(*([cp.fft.fftfreq(Ni).astype(cp.float32)*Ni
+                        for Ni in shape]), indexing="ij")
+    kr = cp.zeros_like(kv[0])
+    tpb = 32
+    bpg = (kr.size + (tpb - 1)) // tpb
+    for i in range(ndim):
+        sqr_add((bpg,), (tpb,), (kr, kv[i], kr.size))
+    sqrt((bpg,), (tpb,), (kr, kr.size))
+
+    # Convert coordinates to int16
+    kcoords = []
+    if ndim == 2:
+        kx, ky = kv[0], kv[1]
+        del kv
+    else:
+        kx, ky, kz = kv[0], kv[1], kv[2]
+        del kv
+        kcoords.insert(0, kz.ravel().astype(np.int16))
+        del kz
+    kcoords.insert(0, ky.ravel().astype(np.int16))
+    del ky
+    kcoords.insert(0, kx.ravel().astype(np.int16))
+    del kx
+
+    mempool.free_all_blocks()
+    pinned_mempool.free_all_blocks()
+
+    # Bin coordinates
+    kbins = cp.arange(int(np.ceil(kr.max().get())))
+    kbinned = cp.digitize(kr.ravel(), kbins)
+    kbinned[...] -= 1
+
+    del kr
+    mempool.free_all_blocks()
+    pinned_mempool.free_all_blocks()
+
+    # Convert to int16
+    kbinned = kbinned.astype(cp.int16)
+
+    mempool.free_all_blocks()
+    pinned_mempool.free_all_blocks()
+
     # FFT
     if compute_fft:
         temp = cp.asarray(data, dtype=complex)
@@ -93,33 +138,9 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, double=True,
             temp[...] = temp - temp.mean()
         fft = cufftn(temp, **kwargs)
     else:
-        fft = data
+        fft = data.astype(complex, copy=False)
 
     del temp
-    mempool.free_all_blocks()
-    pinned_mempool.free_all_blocks()
-
-    # Get binned radial coordinates of FFT
-    kv = cp.meshgrid(*([cp.fft.fftfreq(Ni).astype(np.float32)*Ni
-                        for Ni in shape]), indexing="ij")
-    kr = cp.zeros_like(kv[0])
-    for i in range(ndim):
-        kr[...] += kv[i]**2
-    kr[...] = cp.sqrt(kr)
-
-    kcoords = []
-    for i in range(ndim):
-        temp = kv[i].ravel().astype(cp.int16)
-        kcoords.append(temp)
-
-    del kv, temp
-    mempool.free_all_blocks()
-    pinned_mempool.free_all_blocks()
-
-    kbins = cp.arange(int(np.ceil(kr.max().get())))
-    kbinned = (cp.digitize(kr.ravel(), kbins)-1).astype(cp.int16)
-
-    del kr
     mempool.free_all_blocks()
     pinned_mempool.free_all_blocks()
 
@@ -140,10 +161,10 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, double=True,
 
     # Run main loop
     f = "" if double else "f"
-    compute_pixel = module.get_function(f"compute_pixel{ndim}D{f}")
+    compute_point = module.get_function(f"compute_point{ndim}D{f}")
     bispec, binorm = compute_bispectrum(kind, kcoords, fft, nsamples,
                                         ndim, dim, shape, double,
-                                        compute_pixel)
+                                        compute_point)
 
     bicoh = cp.abs(bispec) / binorm
     bispec /= norm
@@ -162,7 +183,7 @@ def cufftn(data, overwrite_input=True, **kwargs):
     Parameters
     ----------
     data : cupy.ndarray
-        Real or complex valued 2D or 3D image
+        Real or complex valued 2D or 3D image.
 
     Keywords
     --------
@@ -206,8 +227,44 @@ def cufftn(data, overwrite_input=True, **kwargs):
     return fft
 
 
+sqr_add = cp.RawKernel(r'''
+#include <cupy/carray.cuh>
+
+extern "C" __global__
+
+void square_add(float* kr, float* ki, int size) {
+
+    long idx = blockDim.x * blockIdx.x + threadIdx.x;
+
+    if (idx > size-1) { return; }
+
+    kr[idx] += ki[idx]*ki[idx];
+
+}
+
+''', 'square_add')
+
+
+sqrt = cp.RawKernel(r'''
+#include <cupy/carray.cuh>
+
+extern "C" __global__
+
+void square_root(float* kr, int size) {
+
+    long idx = blockDim.x * blockIdx.x + threadIdx.x;
+
+    if (idx > size-1) { return; }
+
+    kr[idx] = sqrt(kr[idx]);
+
+}
+
+''', 'square_root')
+
+
 def compute_bispectrum(kind, kcoords, fft, nsamples,
-                       ndim, dim, shape, double, compute_pixel):
+                       ndim, dim, shape, double, compute_point):
     shape = [cp.int16(Ni) for Ni in shape]
     if double:
         float, complex = cp.float64, cp.complex128
@@ -235,12 +292,12 @@ def compute_bispectrum(kind, kcoords, fft, nsamples,
             bispecbuf = cp.zeros(count, dtype=complex)
             binormbuf = cp.zeros(count, dtype=float)
             countbuf = cp.zeros(count, dtype=cp.int16)
-            compute_pixel((bpg,), (tpb,), (k1ind, k2ind, *kcoords, fft,
+            compute_point((bpg,), (tpb,), (k1ind, k2ind, *kcoords, fft,
                                            cp.int64(nk1), cp.int64(nk2),
                                            *shape, samp, cp.int64(count),
                                            bispecbuf, binormbuf, countbuf))
-            value = bispecbuf.sum() / float(countbuf.sum())
-            norm = binormbuf.sum() / float(countbuf.sum())
+            value = bispecbuf.sum() / countbuf.sum()
+            norm = binormbuf.sum() / countbuf.sum()
             bispec[i, j], bispec[j, i] = value, value
             binorm[i, j], binorm[j, i] = norm, norm
             del bispecbuf, binormbuf, countbuf, samp
@@ -254,14 +311,14 @@ module = cp.RawModule(code=r'''
 # include <cupy/complex.cuh>
 
 extern "C" {
-__global__ void compute_pixel3D(long* k1ind, long* k2ind,
+__global__ void compute_point3D(long* k1ind, long* k2ind,
                                 short* kx, short* ky, short* kz,
                                 const complex<double>* fft, long nk1, long nk2,
                                 short Nx, short Ny, short Nz,
                                 const long* samp, long count,
                                 complex<double>* bispecbuf, double* binormbuf,
                                 short* countbuf) {
-    
+
     long idx = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (idx > count - 1) { return; }
@@ -312,7 +369,7 @@ __global__ void compute_pixel3D(long* k1ind, long* k2ind,
 }
 
 
-__global__ void compute_pixel2D(const long* k1ind, const long* k2ind,
+__global__ void compute_point2D(const long* k1ind, const long* k2ind,
                                 short* kx, short* ky,
                                 const complex<double>* fft, long nk1, long nk2,
                                 short Nx, short Ny, const long* samp, long count,
@@ -366,7 +423,7 @@ __global__ void compute_pixel2D(const long* k1ind, const long* k2ind,
 }
 
 
-__global__ void compute_pixel3Df(const long* k1ind, const long* k2ind,
+__global__ void compute_point3Df(const long* k1ind, const long* k2ind,
                                  const short* kx, const short* ky, const short* kz,
                                  const complex<float>* fft, long nk1, long nk2,
                                 short Nx, short Ny, short Nz,
@@ -424,7 +481,7 @@ __global__ void compute_pixel3Df(const long* k1ind, const long* k2ind,
 }
 
 
-__global__ void compute_pixel2Df(const long* k1ind, const long* k2ind,
+__global__ void compute_point2Df(const long* k1ind, const long* k2ind,
                                  const short* kx, const short* ky,
                                  const complex<float>* fft, long nk1, long nk2,
                                  short Nx, short Ny, const long* samp, long count,
@@ -486,11 +543,14 @@ if __name__ == '__main__':
 
     # Open file
     N = 256
-    data = np.random.normal(size=N**3).reshape((N, N, N))+1
+    data = cp.random.normal(size=N**3).reshape((N, N, N))+1
+    data = cp.asarray(data, dtype=np.complex64)
 
-    kmin, kmax = 0, 32
-    bispec, bicoh, kn = bispectrum(data, nsamples=10000000, kmin=kmin, kmax=kmax,
-                                   mean_subtract=False, bench=True, double=True)
+    kmin, kmax = 0, 100
+    bispec, bicoh, kn = bispectrum(data, nsamples=10000000,
+                                   kmin=kmin, kmax=kmax,
+                                   mean_subtract=False,
+                                   bench=True, double=False)
     print(bispec.mean(), bicoh.mean())
     print(bicoh.max())
 

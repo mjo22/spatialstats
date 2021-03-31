@@ -41,7 +41,7 @@ def bispectrum(data, kmin=None, kmax=None,
         Number of sample triangles to take. This may be
         an array of shape [kmax-kmin+1, kmax-kmin+1] to
         specify the number of samples to take for a given
-        pixel.
+        point.
     mean_subtract : bool
         Subtract mean off of image data to highlight
         non-linearities in bicoherence.
@@ -126,9 +126,9 @@ def bispectrum(data, kmin=None, kmax=None,
         nsamples = np.full((dim, dim), nsamples, dtype=np.int64)
 
     # Run main loop
-    compute_pixel = compute_pixel3D if ndim == 3 else compute_pixel2D
+    compute_point = compute_point3D if ndim == 3 else compute_point2D
     bispec, binorm = compute_bispectrum(kind, kcoords, fft, nsamples,
-                                        ndim, dim, shape, compute_pixel)
+                                        ndim, dim, shape, compute_point)
 
     bicoh = np.abs(bispec) / binorm
     bispec /= norm
@@ -183,7 +183,7 @@ def fftn(image, overwrite_input=False, threads=-1,
 
 @nb.njit(parallel=True)
 def compute_bispectrum(kind, kcoords, fft, nsamples,
-                       ndim, dim, shape, compute_pixel):
+                       ndim, dim, shape, compute_point):
     bispec = np.zeros((dim, dim), dtype=np.complex128)
     binorm = np.zeros((dim, dim), dtype=np.float64)
     for i in range(dim):
@@ -202,7 +202,7 @@ def compute_bispectrum(kind, kcoords, fft, nsamples,
             bispecbuf = np.zeros(count, dtype=np.complex128)
             binormbuf = np.zeros(count, dtype=np.float64)
             countbuf = np.zeros(count, dtype=np.int16)
-            compute_pixel(k1ind, k2ind, kcoords, fft,
+            compute_point(k1ind, k2ind, kcoords, fft,
                           nk1, nk2, shape, samp, count,
                           bispecbuf, binormbuf, countbuf)
             value = bispecbuf.sum() / np.float64(countbuf.sum())
@@ -213,7 +213,7 @@ def compute_bispectrum(kind, kcoords, fft, nsamples,
 
 
 @nb.njit(parallel=True)
-def compute_pixel3D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
+def compute_point3D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
                     samp, count, bispecbuf, binormbuf, countbuf):
     kx, ky, kz = kcoords[0], kcoords[1], kcoords[2]
     Nx, Ny, Nz = shape[0], shape[1], shape[2]
@@ -231,7 +231,7 @@ def compute_pixel3D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
 
 
 @nb.njit(parallel=True)
-def compute_pixel2D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
+def compute_point2D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
                     samp, count, bispecbuf, binormbuf, countbuf):
     kx, ky = kcoords[0], kcoords[1]
     Nx, Ny = shape[0], shape[1]

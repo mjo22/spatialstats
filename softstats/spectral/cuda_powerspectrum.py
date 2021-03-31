@@ -232,8 +232,7 @@ def mod_squared(a):
 
 def kmag_sampling(shape, real=True):
     """
-    Samples the |k| coordinate system as per package pyFC.
-    Units are in inverse pixels.
+    Generates the |k| coordinate system.
 
     Parameters
     ----------
