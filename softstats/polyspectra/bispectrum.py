@@ -80,18 +80,6 @@ def bispectrum(data, kmin=None, kmax=None,
     if bench:
         t0 = time()
 
-    # FFT
-    if compute_fft:
-        temp = data - data.mean() if mean_subtract else data
-        if use_pyfftw:
-            fft = fftn(temp, **kwargs)
-        else:
-            fft = np.fft.fftn(temp, **kwargs)
-    else:
-        fft = data
-
-    del temp
-
     # Get binned radial coordinates of FFT
     kv = np.meshgrid(*([np.fft.fftfreq(Ni).astype(np.float32)*Ni
                         for Ni in shape]), indexing="ij")
@@ -119,6 +107,17 @@ def bispectrum(data, kmin=None, kmax=None,
         kind.append(temp)
 
     del kbinned
+
+    # FFT
+    if compute_fft:
+        temp = data - data.mean() if mean_subtract else data
+        if use_pyfftw:
+            fft = fftn(temp, **kwargs)
+        else:
+            fft = np.fft.fftn(temp, **kwargs)
+        del temp
+    else:
+        fft = data
 
     if nsamples is None:
         nsamples = np.iinfo(np.int64).max

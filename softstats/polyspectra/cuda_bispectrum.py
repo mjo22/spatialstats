@@ -106,12 +106,13 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, double=True,
     else:
         kx, ky, kz = kv[0], kv[1], kv[2]
         del kv
-        kcoords.insert(0, kz.ravel().astype(np.int16))
+        kcoords.append(kz.ravel().astype(np.int16))
         del kz
-    kcoords.insert(0, ky.ravel().astype(np.int16))
+    kcoords.append(ky.ravel().astype(np.int16))
     del ky
-    kcoords.insert(0, kx.ravel().astype(np.int16))
+    kcoords.append(kx.ravel().astype(np.int16))
     del kx
+    kcoords.reverse()
 
     mempool.free_all_blocks()
     pinned_mempool.free_all_blocks()
@@ -135,12 +136,12 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, double=True,
     if compute_fft:
         temp = cp.asarray(data, dtype=complex)
         if mean_subtract:
-            temp[...] = temp - temp.mean()
+            temp[...] -= temp.mean()
         fft = cufftn(temp, **kwargs)
+        del temp
     else:
         fft = data.astype(complex, copy=False)
 
-    del temp
     mempool.free_all_blocks()
     pinned_mempool.free_all_blocks()
 
