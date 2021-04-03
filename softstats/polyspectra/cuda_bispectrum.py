@@ -18,8 +18,10 @@ from cupyx.scipy import fft as cufft
 from time import time
 
 
-def bispectrum(data, kmin=None, kmax=None, nsamples=None, double=True,
-               mean_subtract=False, compute_fft=True, bench=False, **kwargs):
+def bispectrum(data, kmin=None, kmax=None,
+               nsamples=None, sample_thresh=None,
+               double=True, mean_subtract=False,
+               compute_fft=True, bench=False, **kwargs):
     """
     Compute the bispectrum of 2D or 3D real or complex valued data.
 
@@ -38,11 +40,18 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, double=True,
         Minimum wavenumber in bispectrum calculation.
     kmax : int
         Maximum wavenumber in bispectrum calculation.
-    nsamples : int or np.ndarray
+    nsamples : int, float, or np.ndarray
         Number of sample triangles to take. This may be
         an array of shape [kmax-kmin+1, kmax-kmin+1] to
-        specify the number of samples to take for a given
-        point.
+        specify either 1) the number of samples to take
+        for a given point or 2) the fraction of total
+        possible triangles to sample. If None, calculate
+        the bispectrum exactly.
+    sample_thresh : int
+        When the size of the sample space is greater than
+        this number, start to use sampling instead of exact
+        calculation. If None, switch to exact calculation
+        when nsamples is less than tha size of the sample space.
     double : bool
         If False, do calculation in single precision.
     mean_subtract : bool
@@ -157,13 +166,22 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, double=True,
 
     if nsamples is None:
         nsamples = np.iinfo(np.int64).max
+    if sample_thresh is None:
+        sample_thresh = np.iinfo(np.int64).max
+
     if np.issubdtype(type(nsamples), np.integer):
-        nsamples = np.full((dim, dim), nsamples, dtype=int)
+        nsamples = np.full((dim, dim), nsamples, dtype=np.int_)
+    elif np.issubdtype(type(nsamples), np.floating):
+        nsamples = np.full((dim, dim), nsamples)
+    elif type(nsamples) is np.ndarray:
+        if np.issubdtype(nsamples.dtype, np.integer):
+            nsamples = nsamples.astype(np.int_)
 
     # Run main loop
     f = "" if double else "f"
     compute_point = module.get_function(f"compute_point{ndim}D{f}")
-    bispec, binorm = compute_bispectrum(kind, kcoords, fft, nsamples,
+    bispec, binorm = compute_bispectrum(kind, kn, kcoords, fft,
+                                        nsamples, sample_thresh,
                                         ndim, dim, shape, double,
                                         compute_point)
 
@@ -264,9 +282,10 @@ void square_root(float* kr, int size) {
 ''', 'square_root')
 
 
-def compute_bispectrum(kind, kcoords, fft, nsamples,
+def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
                        ndim, dim, shape, double, compute_point):
     shape = [cp.int16(Ni) for Ni in shape]
+    fac = 4*np.pi if ndim == 2 else 4./3.*np.pi
     if double:
         float, complex = cp.float64, cp.complex128
     else:
@@ -276,13 +295,19 @@ def compute_bispectrum(kind, kcoords, fft, nsamples,
     bispec = cp.zeros((dim, dim), dtype=complex)
     binorm = cp.zeros((dim, dim), dtype=float)
     for i in range(dim):
+        k1 = kn[i]
+        dv1 = fac*cp.pi*((k1+1)**ndim-(k1)**ndim)
         k1ind = kind[i]
         nk1 = k1ind.size
         for j in range(i+1):
+            k2 = kn[j]
+            dv2 = fac*cp.pi*((k2+1)**ndim-(k2)**ndim)
             k2ind = kind[j]
             nk2 = k2ind.size
-            nsamp = int(nsamples[i, j])
-            if nsamp < nk1*nk2:
+            nsamp = nsamples[i, j]
+            nsamp = int(nsamp) if type(nsamp) is np.int64 \
+                else max(int(nsamp*nk1*nk2), 1)
+            if nsamp < nk1*nk2 or nsamp > sample_thresh:
                 samp = cp.random.randint(0, nk1*nk2, size=nsamp, dtype=cp.int64)
                 count = nsamp
             else:
@@ -297,8 +322,9 @@ def compute_bispectrum(kind, kcoords, fft, nsamples,
                                            cp.int64(nk1), cp.int64(nk2),
                                            *shape, samp, cp.int64(count),
                                            bispecbuf, binormbuf, countbuf))
-            value = bispecbuf.sum() / countbuf.sum()
-            norm = binormbuf.sum() / countbuf.sum()
+            scaling = dv1*dv2 / countbuf.sum()
+            value = scaling * bispecbuf.sum()
+            norm = scaling * binormbuf.sum()
             bispec[i, j], bispec[j, i] = value, value
             binorm[i, j], binorm[j, i] = norm, norm
             del bispecbuf, binormbuf, countbuf, samp
@@ -543,22 +569,19 @@ if __name__ == '__main__':
     from astropy.io import fits
 
     # Open file
-    N = 256
-    data = cp.random.normal(size=N**3).reshape((N, N, N))+1
-    data = cp.asarray(data, dtype=np.complex64)
+    N = 128
+    data = np.random.normal(size=N**2).reshape((N, N))+1
 
-    kmin, kmax = 0, 100
-    bispec, bicoh, kn = bispectrum(data, nsamples=10000000,
-                                   kmin=kmin, kmax=kmax,
-                                   mean_subtract=False,
-                                   bench=True, double=False)
+    kmin, kmax = 1, 64
+    bispec, bicoh, kn = bispectrum(data, nsamples=.8, kmin=kmin, kmax=kmax,
+                                   mean_subtract=True, bench=True)
     print(bispec.mean(), bicoh.mean())
     print(bicoh.max())
 
     # Plot
     cmap = 'plasma'
     labels = [r"$B(k_1, k_2)$", "$b(k_1, k_2)$"]
-    data = [np.log10(np.abs(bispec)), bicoh]
+    data = [np.log10(np.abs(bispec)), np.log10(bicoh)]
     fig, axes = plt.subplots(ncols=2)
     for i in range(2):
         ax = axes[i]

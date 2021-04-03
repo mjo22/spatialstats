@@ -18,9 +18,9 @@ from time import time
 
 
 def bispectrum(data, kmin=None, kmax=None,
-               nsamples=None, mean_subtract=False,
-               compute_fft=True, use_pyfftw=False,
-               bench=False, **kwargs):
+               nsamples=None, sample_thresh=None,
+               mean_subtract=False, compute_fft=True,
+               use_pyfftw=False, bench=False, **kwargs):
     """
     Compute the bispectrum of 2D or 3D real or complex valued data.
 
@@ -37,11 +37,18 @@ def bispectrum(data, kmin=None, kmax=None,
         Minimum wavenumber in bispectrum calculation.
     kmax : int
         Maximum wavenumber in bispectrum calculation.
-    nsamples : int or np.ndarray
+    nsamples : int, float, or np.ndarray
         Number of sample triangles to take. This may be
         an array of shape [kmax-kmin+1, kmax-kmin+1] to
-        specify the number of samples to take for a given
-        point.
+        specify either 1) the number of samples to take
+        for a given point or 2) the fraction of total
+        possible triangles to sample. If None, calculate
+        the bispectrum exactly.
+    sample_thresh : int
+        When the size of the sample space is greater than
+        this number, start to use sampling instead of exact
+        calculation. If None, switch to exact calculation
+        when nsamples is less than tha size of the sample space.
     mean_subtract : bool
         Subtract mean off of image data to highlight
         non-linearities in bicoherence.
@@ -121,12 +128,21 @@ def bispectrum(data, kmin=None, kmax=None,
 
     if nsamples is None:
         nsamples = np.iinfo(np.int64).max
+    if sample_thresh is None:
+        sample_thresh = np.iinfo(np.int64).max
+
     if np.issubdtype(type(nsamples), np.integer):
-        nsamples = np.full((dim, dim), nsamples, dtype=np.int64)
+        nsamples = np.full((dim, dim), nsamples, dtype=np.int_)
+    elif np.issubdtype(type(nsamples), np.floating):
+        nsamples = np.full((dim, dim), nsamples)
+    elif type(nsamples) is np.ndarray:
+        if np.issubdtype(nsamples.dtype, np.integer):
+            nsamples = nsamples.astype(np.int_)
 
     # Run main loop
     compute_point = compute_point3D if ndim == 3 else compute_point2D
-    bispec, binorm = compute_bispectrum(kind, kcoords, fft, nsamples,
+    bispec, binorm = compute_bispectrum(kind, kn, kcoords, fft,
+                                        nsamples, sample_thresh,
                                         ndim, dim, shape, compute_point)
 
     bicoh = np.abs(bispec) / binorm
@@ -181,18 +197,25 @@ def fftn(image, overwrite_input=False, threads=-1,
 
 
 @nb.njit(parallel=True)
-def compute_bispectrum(kind, kcoords, fft, nsamples,
+def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
                        ndim, dim, shape, compute_point):
+    fac = 4*np.pi if ndim == 2 else 4./3.*np.pi
     bispec = np.zeros((dim, dim), dtype=np.complex128)
     binorm = np.zeros((dim, dim), dtype=np.float64)
     for i in range(dim):
+        k1 = kn[i]
+        dv1 = fac*np.pi*((k1+1)**ndim-(k1)**ndim)
         k1ind = kind[i]
         nk1 = k1ind.size
         for j in range(i+1):
+            k2 = kn[j]
+            dv2 = fac*np.pi*((k2+1)**ndim-(k2)**ndim)
             k2ind = kind[j]
             nk2 = k2ind.size
-            nsamp = int(nsamples[i, j])
-            if nsamp < nk1*nk2:
+            nsamp = nsamples[i, j]
+            nsamp = int(nsamp) if type(nsamp) is np.int64 \
+                else max(int(nsamp*nk1*nk2), 1)
+            if nsamp < nk1*nk2 or nsamp > sample_thresh:
                 samp = np.random.randint(0, nk1*nk2, size=nsamp)
                 count = nsamp
             else:
@@ -204,8 +227,9 @@ def compute_bispectrum(kind, kcoords, fft, nsamples,
             compute_point(k1ind, k2ind, kcoords, fft,
                           nk1, nk2, shape, samp, count,
                           bispecbuf, binormbuf, countbuf)
-            value = bispecbuf.sum() / np.float64(countbuf.sum())
-            norm = binormbuf.sum() / np.float64(countbuf.sum())
+            scaling = dv1*dv2 / countbuf.sum()
+            value = scaling * bispecbuf.sum()
+            norm = scaling * binormbuf.sum()
             bispec[i, j], bispec[j, i] = value, value
             binorm[i, j], binorm[j, i] = norm, norm
     return bispec, binorm
@@ -254,10 +278,10 @@ if __name__ == '__main__':
 
     # Open file
     N = 128
-    data = np.random.normal(size=N**3).reshape((N, N, N))+1
+    data = np.random.normal(size=N**2).reshape((N, N))+1
 
     kmin, kmax = 1, 64
-    bispec, bicoh, kn = bispectrum(data, nsamples=100000, kmin=kmin, kmax=kmax,
+    bispec, bicoh, kn = bispectrum(data, nsamples=.8, kmin=kmin, kmax=kmax,
                                    mean_subtract=True, bench=True)
     print(bispec.mean(), bicoh.mean())
     print(bicoh.max())
