@@ -18,7 +18,7 @@ from cupyx.scipy import fft as cufft
 from time import time
 
 
-def bispectrum(data, kmin=None, kmax=None,
+def bispectrum(data, kmin=None, kmax=None, average=True,
                nsamples=None, sample_thresh=None,
                double=True, mean_subtract=False,
                compute_fft=True, bench=False, **kwargs):
@@ -40,6 +40,10 @@ def bispectrum(data, kmin=None, kmax=None,
         Minimum wavenumber in bispectrum calculation.
     kmax : int
         Maximum wavenumber in bispectrum calculation.
+    average : bool
+        If True, take the mean of all triangles for a
+        given k1, k2. This can only be set to False if
+        doing an exact calculation (nsamples is None).
     nsamples : int, float, or np.ndarray
         Number of sample triangles to take. This may be
         an array of shape [kmax-kmin+1, kmax-kmin+1] to
@@ -86,7 +90,12 @@ def bispectrum(data, kmin=None, kmax=None,
     norm = float(data.size)**3
 
     if ndim not in [2, 3]:
-        raise ValueError("Image must be a 2D or 3D")
+        raise ValueError("Data must be 2D or 3D.")
+
+    if average is False and nsamples is not None:
+        msg = "If using sampling, set average to True. "
+        msg += "Sampling will only converge when averaging."
+        raise ValueError(msg)
 
     # Geometry of output image
     kmax = int(max(shape)/2) if kmax is None else int(kmax)
@@ -180,7 +189,7 @@ def bispectrum(data, kmin=None, kmax=None,
     # Run main loop
     f = "" if double else "f"
     compute_point = module.get_function(f"compute_point{ndim}D{f}")
-    bispec, binorm = compute_bispectrum(kind, kn, kcoords, fft,
+    bispec, binorm = compute_bispectrum(kind, kcoords, fft, average,
                                         nsamples, sample_thresh,
                                         ndim, dim, shape, double,
                                         compute_point)
@@ -282,10 +291,9 @@ void square_root(float* kr, int size) {
 ''', 'square_root')
 
 
-def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
+def compute_bispectrum(kind, kcoords, fft, average, nsamples, sample_thresh,
                        ndim, dim, shape, double, compute_point):
     shape = [cp.int16(Ni) for Ni in shape]
-    fac = 4*np.pi if ndim == 2 else 4./3.*np.pi
     if double:
         float, complex = cp.float64, cp.complex128
     else:
@@ -295,13 +303,9 @@ def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
     bispec = cp.zeros((dim, dim), dtype=complex)
     binorm = cp.zeros((dim, dim), dtype=float)
     for i in range(dim):
-        k1 = kn[i]
-        dv1 = fac*cp.pi*((k1+1)**ndim-(k1)**ndim)
         k1ind = kind[i]
         nk1 = k1ind.size
         for j in range(i+1):
-            k2 = kn[j]
-            dv2 = fac*cp.pi*((k2+1)**ndim-(k2)**ndim)
             k2ind = kind[j]
             nk2 = k2ind.size
             nsamp = nsamples[i, j]
@@ -322,9 +326,12 @@ def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
                                            cp.int64(nk1), cp.int64(nk2),
                                            *shape, samp, cp.int64(count),
                                            bispecbuf, binormbuf, countbuf))
-            scaling = dv1*dv2 / countbuf.sum()
-            value = scaling * bispecbuf.sum()
-            norm = scaling * binormbuf.sum()
+            value = bispecbuf.sum()
+            norm = binormbuf.sum()
+            if average:
+                N = countbuf.sum()
+                value /= N
+                norm /= N
             bispec[i, j], bispec[j, i] = value, value
             binorm[i, j], binorm[j, i] = norm, norm
             del bispecbuf, binormbuf, countbuf, samp
