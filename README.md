@@ -3,13 +3,15 @@
 
 Routines are designed to work with large datasets and some include optional CuPy acceleration. Each routine aims to be independent from the rest of the package, so feel free to use anything you like!
 
-Current submodules are:
+## Submodules ##
 
 ### polyspectra ###
 Calculate the bispectrum and power spectrum of 2D and 3D grids.
 
 ### points ###
 Calculate statistics about the multi-scale structure of 2D and 3D point distributions, like the radial distribution function and structure factor.
+
+## GPU usage ##
 
 The following example demonstrates how to access the <tt>spatialstats</tt> configuration object to toggle gpu usage
 
