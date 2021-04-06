@@ -1,7 +1,7 @@
 # spatialstats #
-<tt>spatialstats</tt> is a collection of my statistical tools and utility routines used to analyze the multi-scale structure of 2D and 3D spatial fields and particle distributions.
+<tt>spatialstats</tt> is a collection of statistical tools and utility routines used to analyze the multi-scale structure of 2D and 3D spatial fields and particle distributions.
 
-Routines are designed to work with large datasets and some include optional CuPy acceleration. Each routine aims to be independent from the rest of the package, so feel free to use anything you like!
+Routines are designed to work with large datasets and some include optional CuPy acceleration. Each routine aims to be independent from the rest of the package, so feel free to just pull out the routine that you need!
 
 ## Submodules ##
 
@@ -28,9 +28,9 @@ result = ss.polyspectra.bispectrum(data)
 
 ## Installation ##
 
-### Option 1 (recommended) ###
+### Option 1 ###
 
-Clone from github and run
+Clone from github and build by running
 
 ```shell
 python setup.py install
@@ -46,4 +46,4 @@ pip install spatialstats
 
 #### GPU accleration ####
 
-Certain routines have GPU implementations. To enable GPU acceleration, install [CuPy](https://github.com/cupy/cupy).
+Certain routines have GPU implementations. To enable the GPU acceleration, install [cupy](https://github.com/cupy/cupy)>=8.0.0.
