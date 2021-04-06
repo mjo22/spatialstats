@@ -25,3 +25,25 @@ shape = (100, 100)
 data = np.random.rand(*shape)
 result = ss.polyspectra.bispectrum(data)
 ```
+
+## Installation ##
+
+### Option 1 (recommended) ###
+
+Clone from github and run
+
+```shell
+python setup.py install
+```
+
+### Option 2 ###
+
+Install from PyPI
+
+```shell
+pip install spatialstats
+```
+
+#### GPU accleration ####
+
+Certain routines have GPU implementations. To enable GPU acceleration, install [CuPy](https://github.com/cupy/cupy).
