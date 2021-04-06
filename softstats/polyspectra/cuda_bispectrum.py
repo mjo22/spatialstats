@@ -18,9 +18,8 @@ from cupyx.scipy import fft as cufft
 from time import time
 
 
-def bispectrum(data, kmin=None, kmax=None, average=True,
-               nsamples=None, sample_thresh=None,
-               double=True, mean_subtract=False,
+def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
+               double=True, exclude=False, mean_subtract=False,
                compute_fft=True, bench=False, **kwargs):
     """
     Compute the bispectrum of 2D or 3D real or complex valued data.
@@ -40,10 +39,6 @@ def bispectrum(data, kmin=None, kmax=None, average=True,
         Minimum wavenumber in bispectrum calculation.
     kmax : int
         Maximum wavenumber in bispectrum calculation.
-    average : bool
-        If True, take the mean of all triangles for a
-        given k1, k2. This can only be set to False if
-        doing an exact calculation (nsamples is None).
     nsamples : int, float, or np.ndarray
         Number of sample triangles to take. This may be
         an array of shape [kmax-kmin+1, kmax-kmin+1] to
@@ -55,9 +50,13 @@ def bispectrum(data, kmin=None, kmax=None, average=True,
         When the size of the sample space is greater than
         this number, start to use sampling instead of exact
         calculation. If None, switch to exact calculation
-        when nsamples is less than tha size of the sample space.
+        when nsamples is less than the size of the sample space.
     double : bool
         If False, do calculation in single precision.
+    exclude : bool
+        If True, exclude k1, k2 such that k1 + k2 is greater
+        than the Nyquist frequency. Excluded points will be
+        set to nan.
     mean_subtract : bool
         Subtract mean off of image data to highlight
         non-linearities in bicoherence.
@@ -91,11 +90,6 @@ def bispectrum(data, kmin=None, kmax=None, average=True,
 
     if ndim not in [2, 3]:
         raise ValueError("Data must be 2D or 3D.")
-
-    if average is False and nsamples is not None:
-        msg = "If using sampling, set average to True. "
-        msg += "Sampling will only converge when averaging."
-        raise ValueError(msg)
 
     # Geometry of output image
     kmax = int(max(shape)/2) if kmax is None else int(kmax)
@@ -173,9 +167,10 @@ def bispectrum(data, kmin=None, kmax=None, average=True,
     mempool.free_all_blocks()
     pinned_mempool.free_all_blocks()
 
+    if sample_thresh is None:
+        sample_thresh = np.iinfo(np.int64).max
     if nsamples is None:
         nsamples = np.iinfo(np.int64).max
-    if sample_thresh is None:
         sample_thresh = np.iinfo(np.int64).max
 
     if np.issubdtype(type(nsamples), np.integer):
@@ -189,10 +184,10 @@ def bispectrum(data, kmin=None, kmax=None, average=True,
     # Run main loop
     f = "" if double else "f"
     compute_point = module.get_function(f"compute_point{ndim}D{f}")
-    bispec, binorm = compute_bispectrum(kind, kcoords, fft, average,
+    bispec, binorm = compute_bispectrum(kind, kn, kcoords, fft,
                                         nsamples, sample_thresh,
                                         ndim, dim, shape, double,
-                                        compute_point)
+                                        exclude, compute_point)
 
     bicoh = cp.abs(bispec) / binorm
     bispec /= norm
@@ -291,8 +286,9 @@ void square_root(float* kr, int size) {
 ''', 'square_root')
 
 
-def compute_bispectrum(kind, kcoords, fft, average, nsamples, sample_thresh,
-                       ndim, dim, shape, double, compute_point):
+def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
+                       ndim, dim, shape, double, exclude, compute_point):
+    knyq = max(shape) // 2
     shape = [cp.int16(Ni) for Ni in shape]
     if double:
         float, complex = cp.float64, cp.complex128
@@ -300,19 +296,24 @@ def compute_bispectrum(kind, kcoords, fft, average, nsamples, sample_thresh,
         float, complex = cp.float32, cp.complex64
     mempool = cp.get_default_memory_pool()
     pinned_mempool = cp.get_default_pinned_memory_pool()
-    bispec = cp.zeros((dim, dim), dtype=complex)
-    binorm = cp.zeros((dim, dim), dtype=float)
+    bispec = cp.full((dim, dim), cp.nan+1.j*cp.nan, dtype=complex)
+    binorm = cp.full((dim, dim), cp.nan, dtype=float)
     for i in range(dim):
+        k1 = kn[i]
         k1ind = kind[i]
         nk1 = k1ind.size
         for j in range(i+1):
+            k2 = kn[j]
+            if exclude and k1 + k2 > knyq:
+                continue
             k2ind = kind[j]
             nk2 = k2ind.size
             nsamp = nsamples[i, j]
             nsamp = int(nsamp) if type(nsamp) is np.int64 \
                 else max(int(nsamp*nk1*nk2), 1)
             if nsamp < nk1*nk2 or nsamp > sample_thresh:
-                samp = cp.random.randint(0, nk1*nk2, size=nsamp, dtype=cp.int64)
+                samp = cp.random.randint(0, nk1*nk2,
+                                         size=nsamp, dtype=cp.int64)
                 count = nsamp
             else:
                 samp = cp.arange(nk1*nk2, dtype=cp.int64)
@@ -326,12 +327,9 @@ def compute_bispectrum(kind, kcoords, fft, average, nsamples, sample_thresh,
                                            cp.int64(nk1), cp.int64(nk2),
                                            *shape, samp, cp.int64(count),
                                            bispecbuf, binormbuf, countbuf))
-            value = bispecbuf.sum()
-            norm = binormbuf.sum()
-            if average:
-                N = countbuf.sum()
-                value /= N
-                norm /= N
+            N = countbuf.sum()
+            value = nk1*nk2*(bispecbuf.sum() / N)
+            norm = nk1*nk2*(binormbuf.sum() / N)
             bispec[i, j], bispec[j, i] = value, value
             binorm[i, j], binorm[j, i] = norm, norm
             del bispecbuf, binormbuf, countbuf, samp
@@ -573,15 +571,13 @@ __global__ void compute_point2Df(const long* k1ind, const long* k2ind,
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
-    from astropy.io import fits
 
-    # Open file
-    N = 128
+    N = 512
     data = np.random.normal(size=N**2).reshape((N, N))+1
 
-    kmin, kmax = 1, 64
+    kmin, kmax = 1, 256
     bispec, bicoh, kn = bispectrum(data, nsamples=.8, kmin=kmin, kmax=kmax,
-                                   mean_subtract=True, bench=True)
+                                   mean_subtract=True, bench=True, exclude=True)
     print(bispec.mean(), bicoh.mean())
     print(bicoh.max())
 
@@ -592,8 +588,6 @@ if __name__ == '__main__':
     fig, axes = plt.subplots(ncols=2)
     for i in range(2):
         ax = axes[i]
-        #ax.set_xscale("log")
-        #ax.set_yscale("log")
         im = ax.imshow(data[i], origin="lower",
                        interpolation="nearest",
                        cmap=cmap,
