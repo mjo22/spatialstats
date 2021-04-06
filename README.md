@@ -6,7 +6,7 @@ Routines are designed to work with large datasets and some include optional CuPy
 Current submodules are:
 
 ### polyspectra ###
-Calculate the bispectrum and power spectra of 2D and 3D grids.
+Calculate the bispectrum and power spectrum of 2D and 3D grids.
 
 ### points ###
 Calculate statistics about the multi-scale structure of 2D and 3D point distributions, like the radial distribution function and structure factor.
