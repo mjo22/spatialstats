@@ -62,6 +62,8 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
         to compute the FFTs.
     bench : bool
         If True, print calculation time.
+    progress : bool
+        Print progress bar of calculation
 
     **kwargs passed to fftn (defined below)
 

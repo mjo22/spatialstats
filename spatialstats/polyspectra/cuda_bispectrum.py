@@ -19,8 +19,9 @@ from time import time
 
 
 def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
-               double=True, exclude=False, mean_subtract=False, blocksize=128,
-               compute_fft=True, bench=False, progress=False, **kwargs):
+               double=True, exclude=False, mean_subtract=False,
+               blocksize=128, compute_fft=True, return_gpu=False,
+               bench=False, progress=False, **kwargs):
     """
     Compute the bispectrum of 2D or 3D real or complex valued data.
 
@@ -60,18 +61,26 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
     mean_subtract : bool
         Subtract mean off of image data to highlight
         non-linearities in bicoherence.
+    blocksize : int
+        Number of threads per block for GPU kernels.
+        The optimal value will vary depending on hardware.
     compute_fft : bool
         If False, do not take the FFT of the input data.
+    return_gpu : bool
+        If True, return the data as a cupy.ndarray. If
+        False, return as numpy.ndarray.
     bench : bool
         If True, print calculation time.
+    progress : bool
+        Print progress bar of calculation
 
     **kwargs passed to cufftn (defined below)
 
     Returns
     -------
-    bispectrum : np.ndarray
+    bispectrum : np.ndarray or cp.ndarray
         Complex-valued 2D image
-    bicoherence : np.ndarray
+    bicoherence : np.ndarray or cp.ndarray
         Real-valued normalized bispectrum
     kn : np.ndarray
         Wavenumbers along axis of bispectrum
@@ -195,7 +204,10 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
     if bench:
         print(f"Time: {time() - t0:.04f} s")
 
-    return bispec.get(), bicoh.get(), kn
+    if not return_gpu:
+        bispec, bicoh = bispec.get(), bicoh.get()
+
+    return bispec, bicoh, kn
 
 
 def cufftn(data, overwrite_input=True, **kwargs):
