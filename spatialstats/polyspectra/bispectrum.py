@@ -19,7 +19,7 @@ from time import time
 
 def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
                exclude=False, mean_subtract=False, compute_fft=True,
-               use_pyfftw=False, bench=False, **kwargs):
+               use_pyfftw=False, bench=False, progress=False, **kwargs):
     """
     Compute the bispectrum of 2D or 3D real or complex valued data.
 
@@ -147,7 +147,7 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
     compute_point = compute_point3D if ndim == 3 else compute_point2D
     bispec, binorm = compute_bispectrum(kind, kn, kcoords, fft,
                                         nsamples, sample_thresh,
-                                        ndim, dim, shape,
+                                        ndim, dim, shape, progress,
                                         exclude, compute_point)
 
     bicoh = np.abs(bispec) / binorm
@@ -203,7 +203,7 @@ def fftn(image, overwrite_input=False, threads=-1,
 
 @nb.njit(parallel=True)
 def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
-                       ndim, dim, shape, exclude, compute_point):
+                       ndim, dim, shape, progress, exclude, compute_point):
     knyq = max(shape) // 2
     bispec = np.full((dim, dim), np.nan, dtype=np.complex128)
     binorm = np.full((dim, dim), np.nan, dtype=np.float64)
@@ -237,10 +237,13 @@ def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
             norm = nk1*nk2*(binormbuf.sum() / N)
             bispec[i, j], bispec[j, i] = value, value
             binorm[i, j], binorm[j, i] = norm, norm
+        if progress:
+            with nb.objmode():
+                printProgressBar(i, dim-1)
     return bispec, binorm
 
 
-@nb.njit(parallel=True)
+@nb.njit(parallel=True, cache=True)
 def compute_point3D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
                     samp, count, bispecbuf, binormbuf, countbuf):
     kx, ky, kz = kcoords[0], kcoords[1], kcoords[2]
@@ -258,7 +261,7 @@ def compute_point3D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
         countbuf[idx] = 1
 
 
-@nb.njit(parallel=True)
+@nb.njit(parallel=True, cache=True)
 def compute_point2D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
                     samp, count, bispecbuf, binormbuf, countbuf):
     kx, ky = kcoords[0], kcoords[1]
@@ -276,15 +279,35 @@ def compute_point2D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
         countbuf[idx] = 1
 
 
+@nb.jit(forceobj=True, cache=True)
+def printProgressBar(iteration, total, prefix='', suffix='', decimals=1,
+                     length=50, fill='█', printEnd="\r"):
+    """
+    Call in a loop to create terminal progress bar
+
+    Adapted from
+    https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console
+    """
+    prefix = '(%d/%d)' % (iteration, total) if prefix == '' else prefix
+    percent = str("%."+str(decimals)+"f") % (100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    prog = '\r%s |%s| %s%s %s' % (prefix, bar, percent, '%', suffix)
+    print(prog, end=printEnd, flush=True)
+    if iteration == total:
+        print()
+
+
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    N = 128
+    N = 512
     data = np.random.normal(size=N**2).reshape((N, N))+1
 
-    kmin, kmax = 1, 64
-    bispec, bicoh, kn = bispectrum(data, nsamples=.8, kmin=kmin, kmax=kmax,
+    kmin, kmax = 1, 4
+    bispec, bicoh, kn = bispectrum(data, nsamples=int(5e7),
+                                   kmin=kmin, kmax=kmax, progress=True,
                                    mean_subtract=True, bench=True, exclude=True)
     print(bispec.mean(), bicoh.mean())
     print(bicoh.max())

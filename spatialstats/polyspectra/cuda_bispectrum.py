@@ -19,8 +19,8 @@ from time import time
 
 
 def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
-               double=True, exclude=False, mean_subtract=False,
-               compute_fft=True, bench=False, **kwargs):
+               double=True, exclude=False, mean_subtract=False, blocksize=128,
+               compute_fft=True, bench=False, progress=False, **kwargs):
     """
     Compute the bispectrum of 2D or 3D real or complex valued data.
 
@@ -104,7 +104,7 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
     kv = cp.meshgrid(*([cp.fft.fftfreq(Ni).astype(cp.float32)*Ni
                         for Ni in shape]), indexing="ij")
     kr = cp.zeros_like(kv[0])
-    tpb = 32
+    tpb = blocksize
     bpg = (kr.size + (tpb - 1)) // tpb
     for i in range(ndim):
         sqr_add((bpg,), (tpb,), (kr, kv[i], kr.size))
@@ -186,8 +186,8 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
     compute_point = module.get_function(f"compute_point{ndim}D{f}")
     bispec, binorm = compute_bispectrum(kind, kn, kcoords, fft,
                                         nsamples, sample_thresh,
-                                        ndim, dim, shape, double,
-                                        exclude, compute_point)
+                                        ndim, dim, shape, double, progress,
+                                        exclude, blocksize, compute_point)
 
     bicoh = cp.abs(bispec) / binorm
     bispec /= norm
@@ -257,11 +257,13 @@ extern "C" __global__
 
 void square_add(float* kr, float* ki, int size) {
 
-    long idx = blockDim.x * blockIdx.x + threadIdx.x;
+    for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
+         idx < size;
+         idx += blockDim.x * gridDim.x) {
 
-    if (idx > size-1) { return; }
+        kr[idx] += ki[idx]*ki[idx];
 
-    kr[idx] += ki[idx]*ki[idx];
+    }
 
 }
 
@@ -275,11 +277,13 @@ extern "C" __global__
 
 void square_root(float* kr, int size) {
 
-    long idx = blockDim.x * blockIdx.x + threadIdx.x;
+    for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
+         idx < size;
+         idx += blockDim.x * gridDim.x) {
 
-    if (idx > size-1) { return; }
+        kr[idx] = sqrt(kr[idx]);
 
-    kr[idx] = sqrt(kr[idx]);
+    }
 
 }
 
@@ -287,7 +291,8 @@ void square_root(float* kr, int size) {
 
 
 def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
-                       ndim, dim, shape, double, exclude, compute_point):
+                       ndim, dim, shape, double, progress,
+                       exclude, blocksize, compute_point):
     knyq = max(shape) // 2
     shape = [cp.int16(Ni) for Ni in shape]
     if double:
@@ -318,7 +323,7 @@ def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
             else:
                 samp = cp.arange(nk1*nk2, dtype=cp.int64)
                 count = nk1*nk2
-            tpb = 32
+            tpb = blocksize
             bpg = (count + (tpb - 1)) // tpb
             bispecbuf = cp.zeros(count, dtype=complex)
             binormbuf = cp.zeros(count, dtype=float)
@@ -335,6 +340,8 @@ def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
             del bispecbuf, binormbuf, countbuf, samp
             mempool.free_all_blocks()
             pinned_mempool.free_all_blocks()
+        if progress:
+            printProgressBar(i, dim-1)
 
     return bispec, binorm
 
@@ -351,53 +358,55 @@ __global__ void compute_point3D(long* k1ind, long* k2ind,
                                 complex<double>* bispecbuf, double* binormbuf,
                                 short* countbuf) {
 
-    long idx = threadIdx.x + blockIdx.x * blockDim.x;
+    for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
+         idx < count;
+         idx += blockDim.x * gridDim.x) {
 
-    if (idx > count - 1) { return; }
+        long n, m;
 
-    long n, m;
+        n = k1ind[samp[idx] % nk1]; m = k2ind[samp[idx] / nk1];
 
-    n = k1ind[samp[idx] % nk1]; m = k2ind[samp[idx] / nk1];
+        short k1x, k1y, k1z, k2x, k2y, k2z, k3x, k3y, k3z;
 
-    short k1x, k1y, k1z, k2x, k2y, k2z, k3x, k3y, k3z;
+        k1x = kx[n]; k1y = ky[n]; k1z = kz[n];
+        k2x = kx[m]; k2y = ky[m]; k2z = kz[m];
+        k3x = k1x+k2x; k3y = k1y+k2y; k3z = k1z+k2z;
 
-    k1x = kx[n]; k1y = ky[n]; k1z = kz[n];
-    k2x = kx[m]; k2y = ky[m]; k2z = kz[m];
-    k3x = k1x+k2x; k3y = k1y+k2y; k3z = k1z+k2z;
+        if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2) || (abs(k3z) > Nz/2)) { return; }
 
-    if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2) || (abs(k3z) > Nz/2)) { return; }
+        __syncthreads();
 
-    __syncthreads();
+        // Map frequency domain to index domain
+        short q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
 
-    // Map frequency domain to index domain
-    short q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
+        if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
+        if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
+        if (k1z < 0) { q1z = k1z + Nz; } else { q1z = k1z; }
 
-    if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
-    if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
-    if (k1z < 0) { q1z = k1z + Nz; } else { q1z = k1z; }
+        if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
+        if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
+        if (k2z < 0) { q2z = k2z + Nz; } else { q2z = k2z; }
 
-    if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
-    if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
-    if (k2z < 0) { q2z = k2z + Nz; } else { q2z = k2z; }
+        if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
+        if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
+        if (k3z < 0) { q3z = k3z + Nz; } else { q3z = k3z; }
 
-    if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
-    if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
-    if (k3z < 0) { q3z = k3z + Nz; } else { q3z = k3z; }
+        // Map multi-dimensional indices to 1-dimensional indices
+        long idx1 = (q1x*Nz + q1y)*Ny + q1z;
+        long idx2 = (q2x*Nz + q2y)*Ny + q2z;
+        long idx3 = (q3x*Nz + q3y)*Ny + q3z;
 
-    // Map multi-dimensional indices to 1-dimensional indices
-    long idx1 = (q1x*Nz + q1y)*Ny + q1z;
-    long idx2 = (q2x*Nz + q2y)*Ny + q2z;
-    long idx3 = (q3x*Nz + q3y)*Ny + q3z;
+        // Sample correlation function
+        complex<double> sample;
+        double mod;
+        sample = fft[idx1] * fft[idx2] * conj(fft[idx3]);
+        mod = abs(sample);
 
-    // Sample correlation function
-    complex<double> sample;
-    double mod;
-    sample = fft[idx1] * fft[idx2] * conj(fft[idx3]);
-    mod = abs(sample);
+        bispecbuf[idx] = sample;
+        binormbuf[idx] = mod;
+        countbuf[idx] = 1;
 
-    bispecbuf[idx] = sample;
-    binormbuf[idx] = mod;
-    countbuf[idx] = 1;
+    }
 }
 
 
@@ -408,50 +417,53 @@ __global__ void compute_point2D(const long* k1ind, const long* k2ind,
                                 complex<double>* bispecbuf, double* binormbuf,
                                 short* countbuf) {
 
-    long idx = threadIdx.x + blockIdx.x * blockDim.x;
+    for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
+         idx < count;
+         idx += blockDim.x * gridDim.x) {
 
-    if (idx > count - 1) { return; }
+        long n, m;
 
-    long n, m;
+        n = k1ind[samp[idx] % nk1]; m = k2ind[samp[idx] / nk1];
 
-    n = k1ind[samp[idx] % nk1]; m = k2ind[samp[idx] / nk1];
+        short k1x, k1y, k2x, k2y, k3x, k3y;
 
-    short k1x, k1y, k2x, k2y, k3x, k3y;
+        k1x = kx[n]; k1y = ky[n];
+        k2x = kx[m]; k2y = ky[m];
+        k3x = k1x+k2x; k3y = k1y+k2y;
 
-    k1x = kx[n]; k1y = ky[n];
-    k2x = kx[m]; k2y = ky[m];
-    k3x = k1x+k2x; k3y = k1y+k2y;
+        if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2)) { return; }
 
-    if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2)) { return; }
+        __syncthreads();
 
-    __syncthreads();
+        // Map frequency domain to index domain
+        short q1x, q1y, q2x, q2y, q3x, q3y;
 
-    // Map frequency domain to index domain
-    short q1x, q1y, q2x, q2y, q3x, q3y;
+        if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
+        if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
 
-    if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
-    if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
+        if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
+        if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
 
-    if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
-    if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
+        if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
+        if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
 
-    if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
-    if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
+        // Map multi-dimensional indices to 1-dimensional indices
+        long idx1 = (q1x*Ny + q1y);
+        long idx2 = (q2x*Ny + q2y);
+        long idx3 = (q3x*Ny + q3y);
 
-    // Map multi-dimensional indices to 1-dimensional indices
-    long idx1 = (q1x*Ny + q1y);
-    long idx2 = (q2x*Ny + q2y);
-    long idx3 = (q3x*Ny + q3y);
+        // Sample correlation function
+        complex<double> sample;
+        double mod;
+        sample = fft[idx1] * fft[idx2] * conj(fft[idx3]);
+        mod = abs(sample);
 
-    // Sample correlation function
-    complex<double> sample;
-    double mod;
-    sample = fft[idx1] * fft[idx2] * conj(fft[idx3]);
-    mod = abs(sample);
+        bispecbuf[idx] = sample;
+        binormbuf[idx] = mod;
+        countbuf[idx] = 1;
 
-    bispecbuf[idx] = sample;
-    binormbuf[idx] = mod;
-    countbuf[idx] = 1;
+    }
+
 }
 
 
@@ -463,53 +475,55 @@ __global__ void compute_point3Df(const long* k1ind, const long* k2ind,
                                 complex<float>* bispecbuf, float* binormbuf,
                                 short* countbuf) {
 
-    long idx = threadIdx.x + blockIdx.x * blockDim.x;
+    for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
+         idx < count;
+         idx += blockDim.x * gridDim.x) {
 
-    if (idx > count - 1) { return; }
+        long n, m;
 
-    long n, m;
+        n = k1ind[samp[idx] % nk1]; m = k2ind[samp[idx] / nk1];
 
-    n = k1ind[samp[idx] % nk1]; m = k2ind[samp[idx] / nk1];
+        short k1x, k1y, k1z, k2x, k2y, k2z, k3x, k3y, k3z;
 
-    short k1x, k1y, k1z, k2x, k2y, k2z, k3x, k3y, k3z;
+        k1x = kx[n]; k1y = ky[n]; k1z = kz[n];
+        k2x = kx[m]; k2y = ky[m]; k2z = kz[m];
+        k3x = k1x+k2x; k3y = k1y+k2y; k3z = k1z+k2z;
 
-    k1x = kx[n]; k1y = ky[n]; k1z = kz[n];
-    k2x = kx[m]; k2y = ky[m]; k2z = kz[m];
-    k3x = k1x+k2x; k3y = k1y+k2y; k3z = k1z+k2z;
+        if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2) || (abs(k3z) > Nz/2)) { return; }
 
-    if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2) || (abs(k3z) > Nz/2)) { return; }
+        __syncthreads();
 
-    __syncthreads();
+        // Map frequency domain to index domain
+        short q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
 
-    // Map frequency domain to index domain
-    short q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
+        if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
+        if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
+        if (k1z < 0) { q1z = k1z + Nz; } else { q1z = k1z; }
 
-    if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
-    if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
-    if (k1z < 0) { q1z = k1z + Nz; } else { q1z = k1z; }
+        if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
+        if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
+        if (k2z < 0) { q2z = k2z + Nz; } else { q2z = k2z; }
 
-    if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
-    if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
-    if (k2z < 0) { q2z = k2z + Nz; } else { q2z = k2z; }
+        if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
+        if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
+        if (k3z < 0) { q3z = k3z + Nz; } else { q3z = k3z; }
 
-    if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
-    if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
-    if (k3z < 0) { q3z = k3z + Nz; } else { q3z = k3z; }
+        // Map multi-dimensional indices to 1-dimensional indices
+        long idx1 = (q1x*Nz + q1y)*Ny + q1z;
+        long idx2 = (q2x*Nz + q2y)*Ny + q2z;
+        long idx3 = (q3x*Nz + q3y)*Ny + q3z;
 
-    // Map multi-dimensional indices to 1-dimensional indices
-    long idx1 = (q1x*Nz + q1y)*Ny + q1z;
-    long idx2 = (q2x*Nz + q2y)*Ny + q2z;
-    long idx3 = (q3x*Nz + q3y)*Ny + q3z;
+        // Sample correlation function
+        complex<float> sample;
+        float mod;
+        sample = fft[idx1] * fft[idx2] * conj(fft[idx3]);
+        mod = abs(sample);
 
-    // Sample correlation function
-    complex<float> sample;
-    float mod;
-    sample = fft[idx1] * fft[idx2] * conj(fft[idx3]);
-    mod = abs(sample);
+        bispecbuf[idx] = sample;
+        binormbuf[idx] = mod;
+        countbuf[idx] = 1;
 
-    bispecbuf[idx] = sample;
-    binormbuf[idx] = mod;
-    countbuf[idx] = 1;
+    }
 }
 
 
@@ -520,52 +534,72 @@ __global__ void compute_point2Df(const long* k1ind, const long* k2ind,
                                  complex<float>* bispecbuf, float* binormbuf,
                                  short* countbuf) {
 
-    long idx = threadIdx.x + blockIdx.x * blockDim.x;
+    for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
+         idx < count;
+         idx += blockDim.x * gridDim.x) {
 
-    if (idx > count - 1) { return; }
+        long n, m;
 
-    long n, m;
+        n = k1ind[samp[idx] % nk1]; m = k2ind[samp[idx] / nk1];
 
-    n = k1ind[samp[idx] % nk1]; m = k2ind[samp[idx] / nk1];
-
-    short k1x, k1y, k2x, k2y, k3x, k3y;
+        short k1x, k1y, k2x, k2y, k3x, k3y;
     
-    k1x = kx[n]; k1y = ky[n];
-    k2x = kx[m]; k2y = ky[m];
-    k3x = k1x+k2x; k3y = k1y+k2y;
+        k1x = kx[n]; k1y = ky[n];
+        k2x = kx[m]; k2y = ky[m];
+        k3x = k1x+k2x; k3y = k1y+k2y;
 
-    if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2)) { return; }
+        if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2)) { return; }
 
-    __syncthreads();
+        __syncthreads();
 
-    // Map frequency domain to index domain
-    short q1x, q1y, q2x, q2y, q3x, q3y;
+        // Map frequency domain to index domain
+        short q1x, q1y, q2x, q2y, q3x, q3y;
 
-    if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
-    if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
+        if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
+        if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
 
-    if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
-    if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
+        if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
+        if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
 
-    if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
-    if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
+        if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
+        if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
 
-    // Map multi-dimensional indices to 1-dimensional indices
-    long idx1 = (q1x*Ny + q1y);
-    long idx2 = (q2x*Ny + q2y);
-    long idx3 = (q3x*Ny + q3y);
+        // Map multi-dimensional indices to 1-dimensional indices
+        long idx1 = (q1x*Ny + q1y);
+        long idx2 = (q2x*Ny + q2y);
+        long idx3 = (q3x*Ny + q3y);
 
-    // Sample correlation function
-    complex<float> sample;
-    float mod;
-    sample = fft[idx1] * fft[idx2] * conj(fft[idx3]);
-    mod = abs(sample);
+        // Sample correlation function
+        complex<float> sample;
+        float mod;
+        sample = fft[idx1] * fft[idx2] * conj(fft[idx3]);
+        mod = abs(sample);
 
-    bispecbuf[idx] = sample;
-    binormbuf[idx] = mod;
-    countbuf[idx] = 1;
+        bispecbuf[idx] = sample;
+        binormbuf[idx] = mod;
+        countbuf[idx] = 1;
+
+    }
 }
 }''')
+
+
+def printProgressBar(iteration, total, prefix='', suffix='', decimals=1,
+                     length=50, fill='█', printEnd="\r"):
+    """
+    Call in a loop to create terminal progress bar
+
+    Adapted from
+    https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console
+    """
+    prefix = '(%d/%d)' % (iteration, total) if prefix == '' else prefix
+    percent = str("%."+str(decimals)+"f") % (100 * (iteration / float(total)))
+    filledLength = int(length * iteration / total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    prog = '\r%s |%s| %s%s %s' % (prefix, bar, percent, '%', suffix)
+    print(prog, end=printEnd, flush=True)
+    if iteration == total:
+        print()
 
 
 if __name__ == '__main__':
@@ -575,8 +609,9 @@ if __name__ == '__main__':
     N = 512
     data = np.random.normal(size=N**2).reshape((N, N))+1
 
-    kmin, kmax = 1, 256
-    bispec, bicoh, kn = bispectrum(data, nsamples=.8, kmin=kmin, kmax=kmax,
+    kmin, kmax = 1, 32
+    bispec, bicoh, kn = bispectrum(data, nsamples=int(5e7),
+                                   kmin=kmin, kmax=kmax, progress=True,
                                    mean_subtract=True, bench=True, exclude=True)
     print(bispec.mean(), bicoh.mean())
     print(bicoh.max())
@@ -584,7 +619,7 @@ if __name__ == '__main__':
     # Plot
     cmap = 'plasma'
     labels = [r"$B(k_1, k_2)$", "$b(k_1, k_2)$"]
-    data = [np.log10(np.abs(bispec)), np.log10(bicoh)]
+    data = [np.log10(np.abs(bispec)), bicoh]
     fig, axes = plt.subplots(ncols=2)
     for i in range(2):
         ax = axes[i]
@@ -596,8 +631,8 @@ if __name__ == '__main__':
         cax = divider.append_axes("right", size="5%", pad=0.05)
         cbar = plt.colorbar(im, cax=cax)
         cbar.set_label(labels[i])
-        if i == 0:
-            ax.contour(data[i], colors='k', extent=[kmin, kmax, kmin, kmax])
+        #if i == 0:
+        #    ax.contour(data[i], colors='k', extent=[kmin, kmax, kmin, kmax])
         ax.set_xlabel(r"$k_1$")
         ax.set_ylabel(r"$k_2$")
 

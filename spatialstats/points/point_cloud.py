@@ -1,6 +1,12 @@
 """
 Routines to calculate the radial distribution function
 for a set of particles.
+
+Authors:
+    Wen Yan and Michael O'Brien (2021)
+    Biophysical Modeling Group
+    Center for Computational Biology
+    Flatiron Institute
 """
 
 import numpy as np
