@@ -46,4 +46,4 @@ pip install spatialstats
 
 #### GPU accleration ####
 
-Certain routines have GPU implementations. To enable the GPU acceleration, install [cupy](https://github.com/cupy/cupy)>=8.0.0.
+Certain routines have GPU implementations. To enable GPU acceleration, install [cupy](https://github.com/cupy/cupy)>=8.0.0.
