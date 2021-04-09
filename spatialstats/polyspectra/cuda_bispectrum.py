@@ -18,9 +18,11 @@ from cupyx.scipy import fft as cufft
 from time import time
 
 
-def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
-               double=True, exclude=False, mean_subtract=False,
-               blocksize=128, compute_fft=True, return_gpu=False,
+def bispectrum(data, kmin=None, kmax=None,
+               nsamples=None, sample_thresh=None,
+               exclude=False, mean_subtract=False,
+               compute_fft=True, full=False,
+               double=True, blocksize=128,
                bench=False, progress=False, **kwargs):
     """
     Compute the bispectrum of 2D or 3D real or complex valued data.
@@ -40,20 +42,16 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
         Minimum wavenumber in bispectrum calculation.
     kmax : int
         Maximum wavenumber in bispectrum calculation.
-    nsamples : int, float, or np.ndarray
-        Number of sample triangles to take. This may be
-        an array of shape [kmax-kmin+1, kmax-kmin+1] to
-        specify either 1) the number of samples to take
-        for a given point or 2) the fraction of total
-        possible triangles to sample. If None, calculate
+    nsamples : int, float or np.ndarray, shape (kmax-kmin+1, kmax-kmin+1)
+        Number of sample triangles or fraction of total
+        possible triangles. This may be an array that
+        specifies for a given k1, k2. If None, calculate
         the bispectrum exactly.
     sample_thresh : int
         When the size of the sample space is greater than
         this number, start to use sampling instead of exact
         calculation. If None, switch to exact calculation
         when nsamples is less than the size of the sample space.
-    double : bool
-        If False, do calculation in single precision.
     exclude : bool
         If True, exclude k1, k2 such that k1 + k2 is greater
         than the Nyquist frequency. Excluded points will be
@@ -61,29 +59,36 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
     mean_subtract : bool
         Subtract mean off of image data to highlight
         non-linearities in bicoherence.
+    compute_fft : bool
+        If False, do not take the FFT of the input data.
+    full : bool
+        Return the full output of calculation. Namely,
+        return the optional sampling diagnostics.
+    double : bool
+        If False, do calculation in single precision.
     blocksize : int
         Number of threads per block for GPU kernels.
         The optimal value will vary depending on hardware.
-    compute_fft : bool
-        If False, do not take the FFT of the input data.
-    return_gpu : bool
-        If True, return the data as a cupy.ndarray. If
-        False, return as numpy.ndarray.
+    progress : bool
+        Print progress bar of calculation.
     bench : bool
         If True, print calculation time.
-    progress : bool
-        Print progress bar of calculation
 
     **kwargs passed to cufftn (defined below)
 
     Returns
     -------
-    bispectrum : np.ndarray or cp.ndarray
-        Complex-valued 2D image
-    bicoherence : np.ndarray or cp.ndarray
-        Real-valued normalized bispectrum
+    bispec : np.ndarray, shape (kmax-kmin+1, kmax-kmin+1)
+        Complex-valued bispectrum
+    bicoh : np.ndarray
+        Real-valued bicoherence
+        of shape [kmax-kmin+1, kmax-kmin+1]
     kn : np.ndarray
         Wavenumbers along axis of bispectrum
+    omega : np.ndarray, shape (kmax-kmin+1, kmax-kmin+1), optional
+        Number of possible triangles in the sample space
+    counts : np.ndarray, shape (kmax-kmin+1, kmax-kmin+1), optional
+        Number of points taken in bispectrum sum
     """
 
     if double:
@@ -193,21 +198,20 @@ def bispectrum(data, kmin=None, kmax=None, nsamples=None, sample_thresh=None,
     # Run main loop
     f = "" if double else "f"
     compute_point = module.get_function(f"compute_point{ndim}D{f}")
-    bispec, binorm = compute_bispectrum(kind, kn, kcoords, fft,
-                                        nsamples, sample_thresh,
-                                        ndim, dim, shape, double, progress,
-                                        exclude, blocksize, compute_point)
+    args = (kind, kn, kcoords, fft, nsamples, sample_thresh, ndim,
+            dim, shape, double, progress, exclude, blocksize, compute_point)
+    bispec, binorm, omega, counts = compute_bispectrum(*args)
 
-    bicoh = cp.abs(bispec) / binorm
+    bicoh = np.abs(bispec) / binorm
     bispec /= norm
 
     if bench:
         print(f"Time: {time() - t0:.04f} s")
 
-    if not return_gpu:
-        bispec, bicoh = bispec.get(), bicoh.get()
-
-    return bispec, bicoh, kn
+    if not full:
+        return bispec, bicoh, kn
+    else:
+        return bispec, bicoh, kn, omega, counts
 
 
 def cufftn(data, overwrite_input=True, **kwargs):
@@ -315,6 +319,8 @@ def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
     pinned_mempool = cp.get_default_pinned_memory_pool()
     bispec = cp.full((dim, dim), cp.nan+1.j*cp.nan, dtype=complex)
     binorm = cp.full((dim, dim), cp.nan, dtype=float)
+    omega = np.zeros((dim, dim), dtype=np.int64)
+    counts = cp.zeros((dim, dim), dtype=cp.int64)
     for i in range(dim):
         k1 = kn[i]
         k1ind = kind[i]
@@ -349,13 +355,15 @@ def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
             norm = nk1*nk2*(binormbuf.sum() / N)
             bispec[i, j], bispec[j, i] = value, value
             binorm[i, j], binorm[j, i] = norm, norm
+            omega[i, j], omega[j, i] = nk1*nk2, nk1*nk2
+            counts[i, j], counts[j, i] = N, N
             del bispecbuf, binormbuf, countbuf, samp
             mempool.free_all_blocks()
             pinned_mempool.free_all_blocks()
         if progress:
             printProgressBar(i, dim-1)
 
-    return bispec, binorm
+    return bispec.get(), binorm.get(), omega, counts.get()
 
 
 module = cp.RawModule(code=r'''
@@ -621,17 +629,18 @@ if __name__ == '__main__':
     N = 512
     data = np.random.normal(size=N**2).reshape((N, N))+1
 
-    kmin, kmax = 1, 32
-    bispec, bicoh, kn = bispectrum(data, nsamples=int(5e7),
+    kmin, kmax = 1, 100
+    bispec, bicoh, kn, omega, counts = bispectrum(data, nsamples=int(1e2),
                                    kmin=kmin, kmax=kmax, progress=True,
-                                   mean_subtract=True, bench=True, exclude=True)
+                                                  mean_subtract=True, full=True, bench=True, exclude=True)
     print(bispec.mean(), bicoh.mean())
     print(bicoh.max())
 
     # Plot
     cmap = 'plasma'
     labels = [r"$B(k_1, k_2)$", "$b(k_1, k_2)$"]
-    data = [np.log10(np.abs(bispec)), bicoh]
+    #data = [np.log10(np.abs(bispec)), bicoh]
+    data = [np.log10(omega), np.log10(counts)]
     fig, axes = plt.subplots(ncols=2)
     for i in range(2):
         ax = axes[i]

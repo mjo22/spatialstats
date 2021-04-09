@@ -14,16 +14,12 @@ Author:
 
 import numpy as np
 from time import time
-try:
-    import pyfftw
-except Exception as err:
-    pyfftw = None
 
 
 def powerspectrum(data, vector=False, real=True, average=False,
                   kmin=None, kmax=None, npts=None,
                   compute_fft=True, compute_sqr=True,
-                  bench=False, use_pyfftw=False, **kwargs):
+                  use_pyfftw=False, bench=False, **kwargs):
     """
     Returns the radially averaged power spectrum
     of real signal on 2 or 3 dimensional scalar or
@@ -41,7 +37,15 @@ def powerspectrum(data, vector=False, real=True, average=False,
     --------
     vector : bool
         Specify whether user has passed scalar or
-        vector data.
+        vector data. If true
+    real : bool
+        If True, take the real FFT
+        (see np.fft.rfftn for example).
+        This is useful for saving memory when working
+        with real data.
+    average : bool
+        If True, average over values in a given
+        bin. If False, add values.
     kmin : float or int
         Minimum k in powerspectrum bins. If None,
         use 1.
@@ -50,9 +54,14 @@ def powerspectrum(data, vector=False, real=True, average=False,
         use highest mode from FFT.
     npts : int
         Number of modes between [kmin, kmax]
-    average : bool
-        If True, average over values in a given
-        bin. If False, add values.
+    compute_fft : bool
+        If False, do not take the FFT of the input data.
+    compute_sqr : bool
+        If False, average the real part of the FFT.
+        If True, take the square as usual.
+    use_pyfftw : bool
+        If True, use pyfftw (see function fftn below)
+        to compute the FFTs.
     bench : bool
         Print message for time of calculation
 
@@ -60,9 +69,9 @@ def powerspectrum(data, vector=False, real=True, average=False,
 
     Returns
     -------
-    spectrum : np.ndarray
+    spectrum : np.ndarray, shape (kmax-kmin+1,)
         Radially averaged power spectrum
-    kn : np.ndarray
+    kn : np.ndarray, shape (kmax-kmin+1,)
         Corresponding bins for spectrum. Same
         size as spectrum.
     """
@@ -198,6 +207,8 @@ def fftn(image, overwrite_input=False, threads=-1, **kwargs):
         The fft. Will be the shape of the input image
         or the user specified shape.
     """
+    import pyfftw
+
     if image.dtype in [np.complex64, np.complex128]:
         dtype = 'complex128'
         fftn = pyfftw.builders.fftn

@@ -39,8 +39,16 @@ def powerspectrum(data, vector=False, real=True, average=False,
     Keywords
     --------
     vector : bool
-        Specify whether user has passed scalar or 
-        vector data.
+        Specify whether user has passed scalar or
+        vector data. If true
+    real : bool
+        If True, take the real FFT
+        (see np.fft.rfftn for example).
+        This is useful for saving memory when working
+        with real data.
+    average : bool
+        If True, average over values in a given
+        bin. If False, add values.
     kmin : float or int
         Minimum k in powerspectrum bins. If None,
         use 1.
@@ -49,19 +57,24 @@ def powerspectrum(data, vector=False, real=True, average=False,
         use highest mode from FFT.
     npts : int
         Number of modes between [kmin, kmax]
-    average : bool
-        If True, average over values in a given
-        bin. If False, add values. 
+    compute_fft : bool
+        If False, do not take the FFT of the input data.
+    compute_sqr : bool
+        If False, average the real part of the FFT.
+        If True, take the square as usual.
+    use_pyfftw : bool
+        If True, use pyfftw (see function fftn below)
+        to compute the FFTs.
     bench : bool
         Print message for time of calculation
 
-    **kwargs are passed to cufftn (defined below)
+    **kwargs are passed to fftn (defined below)
 
     Returns
     -------
-    spectrum : np.ndarray
+    spectrum : np.ndarray, shape (kmax-kmin+1,)
         Radially averaged power spectrum
-    kn : np.ndarray
+    kn : np.ndarray, shape (kmax-kmin+1,)
         Corresponding bins for spectrum. Same
         size as spectrum.
     """
