@@ -13,7 +13,7 @@ Calculate statistics about the multi-scale structure of 2D and 3D point distribu
 
 ## GPU usage ##
 
-The following example demonstrates how to access the <tt>spatialstats</tt> configuration object to toggle gpu usage
+The following example demonstrates how to interact with the <tt>spatialstats</tt> configuration object to toggle gpu usage
 
 ```python
 import numpy as np
