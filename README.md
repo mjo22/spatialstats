@@ -46,4 +46,8 @@ pip install spatialstats
 
 #### GPU accleration ####
 
-Certain routines have GPU implementations. To enable GPU acceleration, install [cupy](https://github.com/cupy/cupy)>=8.0.0.
+Certain routines have GPU implementations. To enable GPU acceleration, install [cupy](https://github.com/cupy/cupy)>=8.0.
+
+#### Dependencies ####
+
+<tt>spatialstats</tt> does not load any of its routines until the time of import (lazy loading), so installation requirements are minimal. This is to keep the flexibility and extensibility of <tt>spatialstats</tt> as a package of disconnected routines. Users may need to add additional dependencies after installation, such as [scipy](https://github.com/scipy/scipy) and [numba](https://github.com/numba/numba)>=0.50.
