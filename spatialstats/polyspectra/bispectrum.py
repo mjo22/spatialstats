@@ -74,16 +74,16 @@ def bispectrum(data, kmin=None, kmax=None,
     Returns
     -------
     bispec : np.ndarray, shape (kmax-kmin+1, kmax-kmin+1)
-        Complex-valued bispectrum
-    bicoh : np.ndarray
-        Real-valued bicoherence
-        of shape [kmax-kmin+1, kmax-kmin+1]
+        Real or complex-valued bispectrum.
+        Will be real-valued if the input data is real.
+    bicoh : np.ndarray, shape (kmax-kmin+1, kmax-kmin+1)
+        Real-valued bicoherence.
     kn : np.ndarray
-        Wavenumbers along axis of bispectrum
+        Wavenumbers along axis of bispectrum.
     omega : np.ndarray, shape (kmax-kmin+1, kmax-kmin+1), optional
-        Number of possible triangles in the sample space
+        Number of possible triangles in the sample space.
     counts : np.ndarray, shape (kmax-kmin+1, kmax-kmin+1), optional
-        Number of points taken in bispectrum sum
+        Number of evaluations in the bispectrum sum.
     """
     
     shape, ndim = nb.typed.List(data.shape), data.ndim
@@ -159,6 +159,9 @@ def bispectrum(data, kmin=None, kmax=None,
     args = (kind, kn, kcoords, fft, nsamples, sample_thresh,
             ndim, dim, shape, progress, exclude, compute_point)
     bispec, binorm, omega, counts = compute_bispectrum(*args)
+
+    if np.issubdtype(data.dtype, np.floating):
+        bispec = bispec.real
 
     bicoh = np.abs(bispec) / binorm
     bispec /= norm
