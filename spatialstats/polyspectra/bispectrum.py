@@ -85,9 +85,8 @@ def bispectrum(data, kmin=None, kmax=None,
     counts : np.ndarray, shape (kmax-kmin+1, kmax-kmin+1), optional
         Number of evaluations in the bispectrum sum.
     """
-    
+
     shape, ndim = nb.typed.List(data.shape), data.ndim
-    norm = float(data.size)**3
 
     if ndim not in [2, 3]:
         raise ValueError("Data must be 2D or 3D.")
@@ -164,7 +163,7 @@ def bispectrum(data, kmin=None, kmax=None,
         bispec = bispec.real
 
     bicoh = np.abs(bispec) / binorm
-    bispec /= norm
+    bispec *= (omega / counts)
 
     if bench:
         print(f"Time: {time() - t0:.04f} s")
@@ -251,8 +250,8 @@ def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
                           nk1, nk2, shape, samp, count,
                           bispecbuf, binormbuf, countbuf)
             N = countbuf.sum()
-            value = nk1*nk2*(bispecbuf.sum() / N)
-            norm = nk1*nk2*(binormbuf.sum() / N)
+            value = bispecbuf.sum()
+            norm = binormbuf.sum()
             bispec[i, j], bispec[j, i] = value, value
             binorm[i, j], binorm[j, i] = norm, norm
             omega[i, j], omega[j, i] = nk1*nk2, nk1*nk2
@@ -323,21 +322,22 @@ if __name__ == '__main__':
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
     N = 512
+    np.random.seed(1234)
     data = np.random.normal(size=N**2).reshape((N, N))+1
 
-    kmin, kmax = 1, 100
-    bispec, bicoh, kn, omega, counts = bispectrum(data, nsamples=int(1e6),
-                                                  kmin=kmin, kmax=kmax, progress=True,
-                                                  mean_subtract=True, full=True,
-                                                  bench=True, exclude=True)
+    kmin, kmax = 1, 20
+    bispec, bicoh, kn, omega, counts = bispectrum(data, nsamples=None,
+                                                  kmin=kmin, kmax=kmax,
+                                                  progress=True,
+                                                  mean_subtract=True,
+                                                  full=True, bench=True)
     print(bispec.mean(), bicoh.mean())
     print(bicoh.max())
 
     # Plot
     cmap = 'plasma'
     labels = [r"$B(k_1, k_2)$", "$b(k_1, k_2)$"]
-    #data = [np.log10(np.abs(bispec)), bicoh]
-    data = [np.log10(omega), np.log10(counts)]
+    data = [np.log10(np.abs(bispec)), bicoh]
     fig, axes = plt.subplots(ncols=2)
     for i in range(2):
         ax = axes[i]
