@@ -1,3 +1,3 @@
 
 
-from . import binning
+from .binning import radialavg, shellavg, aziavg

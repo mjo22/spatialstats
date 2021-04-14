@@ -5,11 +5,8 @@ using CuPy acceleration.
 This implementation works on 1D, 2D, and 3D rectangular domains for real
 or complex valued data.
 
-Author:
-    Michael O'Brien (2020)
-    Biophysical Modeling Group
-    Center for Computational Biology
-    Flatiron Institute
+.. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
+
 """
 
 
@@ -35,40 +32,38 @@ def powerspectrum(data, vector=False, real=True, average=False,
         If vector data, the shape should be (n, d1, d2) or
         (n, d1, d2, d3) where n is the number of vector components
         and di is the ith dimension of the image.
-
-    Keywords
-    --------
-    vector : bool
+    vector : bool, optional
         Specify whether user has passed scalar or
         vector data. If true
-    real : bool
+    real : bool, optional
         If True, take the real FFT
         (see np.fft.rfftn for example).
         This is useful for saving memory when working
         with real data.
-    average : bool
+    average : bool, optional
         If True, average over values in a given
         bin. If False, add values.
-    kmin : float or int
+    kmin : float or int, optional
         Minimum k in powerspectrum bins. If None,
         use 1.
-    kmax : float or int
+    kmax : float or int, optional
         Maximum k in powerspectrum bins. If None,
         use highest mode from FFT.
-    npts : int
+    npts : int, optional
         Number of modes between [kmin, kmax]
-    compute_fft : bool
+    compute_fft : bool, optional
         If False, do not take the FFT of the input data.
-    compute_sqr : bool
+    compute_sqr : bool, optional
         If False, average the real part of the FFT.
         If True, take the square as usual.
-    use_pyfftw : bool
+    use_pyfftw : bool, optional
         If True, use pyfftw (see function fftn below)
         to compute the FFTs.
-    bench : bool
+    bench : bool, optional
         Print message for time of calculation
 
-    **kwargs are passed to fftn (defined below)
+    **kwargs are passed to cupyx.scipy.fft.fftn
+    or cupyx.scipy.fft.rfftn.
 
     Returns
     -------
@@ -112,14 +107,14 @@ def powerspectrum(data, vector=False, real=True, average=False,
         temp = cp.asarray(data[i]) if vector else cp.asarray(data)
         comp[...] = temp
         if compute_fft:
-            fft = cufftn(comp, **kwargs)
+            fft = _cufftn(comp, **kwargs)
         else:
             fft = comp
         if density is None:
             fftshape = fft.shape
             density = cp.zeros(fft.shape)
         if compute_sqr:
-            density[...] += mod_squared(fft)
+            density[...] += _mod_squared(fft)
         else:
             density[...] += np.real(fft)
         del fft, temp
@@ -134,7 +129,7 @@ def powerspectrum(data, vector=False, real=True, average=False,
         density[...] *= fac/norm
 
     # Get radial coordinates
-    kr = cp.asarray(kmag_sampling(fftshape, real=real).astype(np.float32))
+    kr = cp.asarray(_kmag_sampling(fftshape, real=real).astype(np.float32))
 
     # Flatten arrays
     kr = kr.ravel()
@@ -182,7 +177,7 @@ def powerspectrum(data, vector=False, real=True, average=False,
     return spectrum, kn
 
 
-def cufftn(data, overwrite_input=False, **kwargs):
+def _cufftn(data, overwrite_input=False, **kwargs):
     """
     Calculate the N-dimensional fft of an image
     with memory efficiency
@@ -191,17 +186,12 @@ def cufftn(data, overwrite_input=False, **kwargs):
     ----------
     data : cupy.ndarray
         Real or complex valued 2D or 3D image
-
-    Keywords
-    --------
-    complex : cupy.dtype
-        Specify single or double precision fft
-    overwrite_input : bool
+    overwrite_input : bool, optional
         Specify whether input data can be destroyed.
         This is useful if low on memory.
         See cupyx.scipy.fft.fftn for more.
 
-    **kwargs passes to cupyx.scipy.fft.fftn
+    **kwargs passed to cupyx.scipy.fft.fftn
 
     Returns
     -------
@@ -239,11 +229,11 @@ def cufftn(data, overwrite_input=False, **kwargs):
 
 
 @cp.fuse(kernel_name='mod_squared')
-def mod_squared(a):
+def _mod_squared(a):
     return cp.real(a*cp.conj(a))
 
 
-def kmag_sampling(shape, real=True):
+def _kmag_sampling(shape, real=True):
     """
     Generates the |k| coordinate system.
 

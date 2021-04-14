@@ -1,4 +1,11 @@
+"""
+spatialstats is a collection of statistical tools and
+utility routines used to analyze the multi-scale structure
+of 2D and 3D spatial fields and particle distributions.
 
+.. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
+
+"""
 import importlib
 import warnings
 from .Configuration import Configuration

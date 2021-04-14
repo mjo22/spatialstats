@@ -7,3 +7,6 @@ __pycache__
 *.html
 build
 dist
+docs/_build
+docs/_static
+docs/_template

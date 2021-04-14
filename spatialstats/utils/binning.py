@@ -1,84 +1,54 @@
 """
 Routines for averaging 2D and 3D images
 in polar and spherical coordinates
+
+.. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
+
 """
 
 import numpy as np
 
 
-def uniqueavg(data, coords):
-    """
-    Average data by choosing bins as all unique
-    values in coordinate system
-
-    Parameters
-    ----------
-    data : np.ndarray
-        Data to average
-    coords : np.ndarray
-        Coordinate system to average over. Must
-        have same shape as data
-
-    Returns
-    -------
-    avg : np.ndarray
-        Averaged data over all unique values in coords
-    bins : np.ndarray
-        All unique values in coords
-    """
-    bins = np.append(np.unique(coords.flat), coords.max())
-    count, bins = np.histogram(coords.flat, bins)
-    weight, bins = np.histogram(coords.flat, bins, weights=data.flat)
-    avg = weight / count
-    bins = 0.5 * (bins[:-1] + bins[1:])
-
-    return avg, bins
-
-
 def radialavg(data, center=None, dphi=None,
               bounds=(0, 2*np.pi), portion=False,
               stdev=False, avg=True, weight=None):
-    """Avg data over bins of radial contours
+    """
+    Average data over bins of radial contours.
 
     Adapted from aziavg.py in https://github.com/davidgrier/dgmath/
 
     Arguments
     ---------
-    data : ndarray
-        two-dimensional data array.
-
-    Keywords
-    --------
-    center : [xc, yc]
-        Coordinates of the point around which to compute average
-        Default: geometric center
-    dphi : float
+    data : np.ndarray
+        Two-dimensional data array.
+    center : tuple, shape (2,), optional
+        (x, y) coordinates of the point around which to compute average.
+        Default is the image's geometric center.
+    dphi : float, optional
         Angular division of bins on which to group angles when
         averaging.
-    bounds : tuple int
-        angle range of average [radians]
-        Default: (0, 2*pi)
-    portion : bool
+    bounds : tuple int, optional
+        Anglular range of average. The default is (0, 2*pi)
+    portion : bool, optional
         Choose whether to scale data according to position in bin.
         Good for small number of bins and a lot of data.
-    stdev : bool
+    stdev : bool, optional
         Choose whether to return error bars for each bin.
-        Only works for portion equal to False
-    avg : bool
+        Only works for portion equal to False.
+    avg : bool, optional
         Choose whether to average data along radial contours
-        or compute sum
-
-    weight : ndarray
-        relative weighting of each pixel in data.
-        Default: uniform weighting
+        or compute sum.
+    weight : np.ndarray, optional
+        Relative weighting of each pixel in data.
+        The default weighting is uniform.
 
     Returns
     -------
-    result : ndarray
-        One-dimensional radial average
-    phin : ndarray
-        The bins of angles
-    stdev : ndarray, optional
+    result : np.ndarray
+        One-dimensional radial average.
+    phin : np.ndarray
+        The bins of angles.
+    stdev : np.ndarray, optional
         Standard deviations from the average.
     """
     y, x = np.indices(data.shape)
@@ -167,45 +137,43 @@ def radialavg(data, center=None, dphi=None,
 def aziavg(data, center=None, rad=None,
            portion=False, stdev=False,
            avg=True, weight=None):
-    '''Average data over bins of azimuthal contours
+    '''
+    Average data over bins of azimuthal contours.
 
     Extension of aziavg.py in https://github.com/davidgrier/dgmath/
 
     Arguments
     ---------
-    data : ndarray
+    data : np.ndarray
         two-dimensional data array.
-
-    Keywords
-    --------
-    center : [xc, yc]
-        Coordinates of the point around which to compute average
-        Default: geometric center
-    rad : ndarray or int
-        array of bins to use in average or
-        maximum radius of average [pixels]
-        Default: half of the minimum dimension of the data
-    portion : bool
+    center : tuple, shape (2,), optional
+        (x, y) coordinates of the point around which to compute average.
+        Default is the image's geometric center.
+    rad : np.ndarray or int, optional
+        Array of bins to use in average or maximum radius.
+        of average.
+        The default is half of the minimum dimension of the data.
+    portion : bool, optional
         Choose whether to portion data by position in bin.
         Good for small number of bins compared to dimension
         of data.
-    stdev : bool
+    stdev : bool, optional
         Choose whether to return error bars for each bin.
-        Only works for portion equal to False
-    avg : bool
+        Only works for portion equal to False.
+    avg : bool, optional
         Choose whether to average data along azimuthal contours
-        or to compute sum
-    weight : ndarray
-        relative weighting of each pixel in data.
-        Default: uniform weighting
+        or to compute sum.
+    weight : np.ndarray, optional
+        Relative weighting of each pixel in data.
+        The default weighting is uniform.
 
     Returns
     -------
-    result : ndarray
-        One-dimensional azimuthal average
-    rn : ndarray
-        Radial bins of average
-    stdev : ndarray, optional
+    result : np.ndarray
+        One-dimensional azimuthal average.
+    rn : np.ndarray
+        Radial bins of average.
+    stdev : np.ndarray, optional
         Standard deviations from the average.
     '''
     y, x = np.indices(data.shape)
@@ -276,42 +244,40 @@ def aziavg(data, center=None, rad=None,
 def shellavg(data, center=None, rad=None,
              portion=False, stdev=False,
              avg=True, weight=None):
-    """Average data over bins of spherical shells
+    """
+    Average data over bins of spherical shells.
 
     Adapted from aziavg.py in https://github.com/davidgrier/dgmath/
 
     Arguments
     ---------
     data : ndarray
-        three-dimensional data array.
-
-    Keywords
-    --------
-    center : [xc, yc, zc]
-        Coordinates of the point around which to compute average
-        Default: geometric center
-    rad : np.ndarray or int
+        Three-dimensional data array.
+    center : tuple, shape (3,), optional
+        (x, y, z) coordinates of the point around which to compute average.
+        Default is the image's geometric center.
+    rad : np.ndarray or int, optional
         array of bins to use in average or
         maximum radius of average [pixels]
         Default: half of the minimum dimension of the data
-    portion : bool
+    portion : bool, optional
         Choose whether to scale data according to position in bin.
         Good for small number of bins and a lot of data.
-    stdev : bool
+    stdev : bool, optional
         Choose whether to return error bars for each bin.
-        Only works for portion equal to False
-    avg : bool
-        Choose whether to average data along shells or compute sum
-    weight : ndarray
-        relative weighting of each pixel in data.
-        Default: uniform weighting
+        Only works for portion equal to False.
+    avg : bool, optional
+        Choose whether to average data along shells or compute sum.
+    weight : ndarray, optional
+        Relative weighting of each pixel in data.
+        The default weighting is uniform.
 
     Returns
     -------
-    result : ndarray
-        One-dimensional angular average
-    rn : ndarray
-        Radial bins of average
+    result : np.ndarray
+        One-dimensional angular average.
+    rn : np.ndarray
+        Radial bins of the average.
     stdev : ndarray, optional
         Standard deviations from the average.
     """

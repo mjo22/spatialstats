@@ -3,7 +3,7 @@
 
 Routines are designed to work with large datasets and some include optional CuPy acceleration. Each routine aims to be independent from the rest of the package, so feel free to just pull out the routine that you need!
 
-## Submodules ##
+## Subpackages ##
 
 ### polyspectra ###
 Calculate the bispectrum and power spectrum of 2D and 3D grids.

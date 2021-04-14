@@ -5,11 +5,8 @@ This implementation works on 2D and 3D rectangular domains for real
 or complex valued data. It can compute the bispectrum exactly or
 using uniform sampling.
 
-Author:
-    Michael J. O'Brien (2021)
-    Biophysical Modeling Group
-    Center for Computational Biology
-    Flatiron Institute
+.. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
+
 """
 
 import numpy as np
@@ -27,7 +24,7 @@ def bispectrum(data, kmin=None, kmax=None,
     """
     Compute the bispectrum of 2D or 3D real or complex valued data.
 
-    Arguments
+    Parameters
     ---------
     data : np.ndarray
         Real or complex valued 2D or 3D scalar data.
@@ -35,46 +32,44 @@ def bispectrum(data, kmin=None, kmax=None,
         where di is the ith dimension of the image.
         Can be CPU or GPU data. If it is GPU data and
         complex, it will be overwritten by default.
-
-    Keywords
-    --------
-    kmin : int
+    kmin : int, optional
         Minimum wavenumber in bispectrum calculation.
-    kmax : int
+    kmax : int, optional
         Maximum wavenumber in bispectrum calculation.
-    nsamples : int, float or np.ndarray, shape (kmax-kmin+1, kmax-kmin+1)
+    nsamples : int, float or np.ndarray, shape (kmax-kmin+1, kmax-kmin+1), optional
         Number of sample triangles or fraction of total
         possible triangles. This may be an array that
         specifies for a given k1, k2. If None, calculate
         the bispectrum exactly.
-    sample_thresh : int
+    sample_thresh : int, optional
         When the size of the sample space is greater than
         this number, start to use sampling instead of exact
         calculation. If None, switch to exact calculation
         when nsamples is less than the size of the sample space.
-    exclude : bool
+    exclude : bool, optional
         If True, exclude k1, k2 such that k1 + k2 is greater
         than the Nyquist frequency. Excluded points will be
         set to nan.
-    mean_subtract : bool
+    mean_subtract : bool, optional
         Subtract mean off of image data to highlight
         non-linearities in bicoherence.
-    compute_fft : bool
+    compute_fft : bool, optional
         If False, do not take the FFT of the input data.
-    full : bool
+    full : bool, optional
         If True, return the full output of calculation. Namely,
         return the optional sampling diagnostics.
-    double : bool
+    double : bool, optional
         If False, do calculation in single precision.
-    blocksize : int
+    blocksize : int, optional
         Number of threads per block for GPU kernels.
         The optimal value will vary depending on hardware.
-    progress : bool
+    progress : bool, optional
         Print progress bar of calculation.
-    bench : bool
+    bench : bool, optional
         If True, print calculation time.
 
-    **kwargs passed to cufftn (defined below)
+    **kwargs are passed to cupyx.scipy.fft.fftn
+    or cupyx.scipy.fft.rfftn.
 
     Returns
     -------
@@ -120,8 +115,8 @@ def bispectrum(data, kmin=None, kmax=None,
     tpb = blocksize
     bpg = (kr.size + (tpb - 1)) // tpb
     for i in range(ndim):
-        sqr_add((bpg,), (tpb,), (kr, kv[i], kr.size))
-    sqrt((bpg,), (tpb,), (kr, kr.size))
+        _sqr_add((bpg,), (tpb,), (kr, kv[i], kr.size))
+    _sqrt((bpg,), (tpb,), (kr, kr.size))
 
     # Convert coordinates to int16
     kcoords = []
@@ -162,7 +157,7 @@ def bispectrum(data, kmin=None, kmax=None,
         temp = cp.asarray(data, dtype=complex)
         if mean_subtract:
             temp[...] -= temp.mean()
-        fft = cufftn(temp, **kwargs)
+        fft = _cufftn(temp, **kwargs)
         del temp
     else:
         fft = data.astype(complex, copy=False)
@@ -196,10 +191,10 @@ def bispectrum(data, kmin=None, kmax=None,
 
     # Run main loop
     f = "" if double else "f"
-    compute_point = module.get_function(f"compute_point{ndim}D{f}")
+    compute_point = _module.get_function(f"compute_point{ndim}D{f}")
     args = (kind, kn, kcoords, fft, nsamples, sample_thresh, ndim,
             dim, shape, double, progress, exclude, blocksize, compute_point)
-    bispec, binorm, omega, counts = compute_bispectrum(*args)
+    bispec, binorm, omega, counts = _compute_bispectrum(*args)
 
     if np.issubdtype(data.dtype, np.floating):
         bispec = bispec.real
@@ -216,7 +211,7 @@ def bispectrum(data, kmin=None, kmax=None,
         return bispec, bicoh, kn, omega, counts
 
 
-def cufftn(data, overwrite_input=True, **kwargs):
+def _cufftn(data, overwrite_input=True, **kwargs):
     """
     Calculate the N-dimensional fft of an image
     with memory efficiency
@@ -225,15 +220,13 @@ def cufftn(data, overwrite_input=True, **kwargs):
     ----------
     data : cupy.ndarray
         Real or complex valued 2D or 3D image.
-
-    Keywords
-    --------
-    overwrite_input : bool
+    overwrite_input : bool, optional
         Specify whether input data can be destroyed.
         This is useful if low on memory.
         See cupyx.scipy.fft.fftn for more.
 
-    **kwargs passes to cupyx.scipy.fft.fftn or cupyx.scipy.fft.rfftn
+    **kwargs passes to cupyx.scipy.fft.fftn or
+    cupyx.scipy.fft.rfftn
 
     Returns
     -------
@@ -268,7 +261,7 @@ def cufftn(data, overwrite_input=True, **kwargs):
     return fft
 
 
-sqr_add = cp.RawKernel(r'''
+_sqr_add = cp.RawKernel(r'''
 #include <cupy/carray.cuh>
 
 extern "C" __global__
@@ -288,7 +281,7 @@ void square_add(float* kr, float* ki, int size) {
 ''', 'square_add')
 
 
-sqrt = cp.RawKernel(r'''
+_sqrt = cp.RawKernel(r'''
 #include <cupy/carray.cuh>
 
 extern "C" __global__
@@ -308,9 +301,9 @@ void square_root(float* kr, int size) {
 ''', 'square_root')
 
 
-def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
-                       ndim, dim, shape, double, progress,
-                       exclude, blocksize, compute_point):
+def _compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
+                        ndim, dim, shape, double, progress,
+                        exclude, blocksize, compute_point):
     knyq = max(shape) // 2
     shape = [cp.int16(Ni) for Ni in shape]
     if double:
@@ -363,12 +356,12 @@ def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
             mempool.free_all_blocks()
             pinned_mempool.free_all_blocks()
         if progress:
-            printProgressBar(i, dim-1)
+            _printProgressBar(i, dim-1)
 
     return bispec.get(), binorm.get(), omega, counts.get()
 
 
-module = cp.RawModule(code=r'''
+_module = cp.RawModule(code=r'''
 # include <cupy/complex.cuh>
 
 extern "C" {
@@ -606,8 +599,8 @@ __global__ void compute_point2Df(const long* k1ind, const long* k2ind,
 }''')
 
 
-def printProgressBar(iteration, total, prefix='', suffix='', decimals=1,
-                     length=50, fill='█', printEnd="\r"):
+def _printProgressBar(iteration, total, prefix='', suffix='', decimals=1,
+                      length=50, fill='█', printEnd="\r"):
     """
     Call in a loop to create terminal progress bar
 

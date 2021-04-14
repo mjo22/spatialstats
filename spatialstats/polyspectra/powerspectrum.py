@@ -4,11 +4,8 @@ Routines to calculate power spectrum on scalar and vector image data.
 This implementation works on 1D, 2D, and 3D rectangular domains for real
 or complex valued data.
 
-Author:
-    Michael O'Brien (2020)
-    Biophysical Modeling Group
-    Center for Computational Biology
-    Flatiron Institute
+.. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
+
 """
 
 
@@ -25,6 +22,9 @@ def powerspectrum(data, vector=False, real=True, average=False,
     of real signal on 2 or 3 dimensional scalar or
     vector data.
 
+    **kwargs are passed to np.fft.fftn, np.fft.rfftn,
+    pyfftw.builders.fftn, or pyfftw.builders.rfftn.
+
     Parameters
     ----------
     data : np.ndarray
@@ -32,40 +32,34 @@ def powerspectrum(data, vector=False, real=True, average=False,
         If vector data, the shape should be (n, d1, d2) or
         (n, d1, d2, d3) where n is the number of vector components
         and di is the ith dimension of the image.
-
-    Keywords
-    --------
-    vector : bool
+    vector : bool, optional
         Specify whether user has passed scalar or
         vector data. If true
-    real : bool
+    real : bool, optional
         If True, take the real FFT
         (see np.fft.rfftn for example).
         This is useful for saving memory when working
         with real data.
-    average : bool
+    average : bool, optional
         If True, average over values in a given
         bin. If False, add values.
-    kmin : float or int
+    kmin : float or int, optional
         Minimum k in powerspectrum bins. If None,
         use 1.
-    kmax : float or int
+    kmax : float or int, optional
         Maximum k in powerspectrum bins. If None,
         use highest mode from FFT.
-    npts : int
+    npts : int, optional
         Number of modes between [kmin, kmax]
-    compute_fft : bool
+    compute_fft : bool, optional
         If False, do not take the FFT of the input data.
-    compute_sqr : bool
+    compute_sqr : bool, optional
         If False, average the real part of the FFT.
         If True, take the square as usual.
-    use_pyfftw : bool
-        If True, use pyfftw (see function fftn below)
-        to compute the FFTs.
-    bench : bool
+    use_pyfftw : bool, optional
+        If True, use pyfftw to compute the FFTs.
+    bench : bool, optional
         Print message for time of calculation
-
-    **kwargs are passed to fftn (defined below)
 
     Returns
     -------
@@ -106,7 +100,7 @@ def powerspectrum(data, vector=False, real=True, average=False,
         if compute_fft:
             # Compute fft of a component
             if use_pyfftw:
-                fft = fftn(comp, **kwargs)
+                fft = _fftn(comp, **kwargs)
             else:
                 if real:
                     fft = np.fft.rfftn(comp, **kwargs)
@@ -134,7 +128,7 @@ def powerspectrum(data, vector=False, real=True, average=False,
     del data
 
     # Compute radial coordinates
-    kr = kmag_sampling(fftshape, real=real)
+    kr = _kmag_sampling(fftshape, real=real)
 
     # Flatten arrays
     kr = kr.ravel()
@@ -177,7 +171,7 @@ def powerspectrum(data, vector=False, real=True, average=False,
     return spectrum, kn
 
 
-def fftn(image, overwrite_input=False, threads=-1, **kwargs):
+def _fftn(image, overwrite_input=False, threads=-1, **kwargs):
     """
     Calculate N-dimensional fft of image with pyfftw.
     See pyfftw.builders.fftn for kwargs documentation.
@@ -186,20 +180,13 @@ def fftn(image, overwrite_input=False, threads=-1, **kwargs):
     ----------
     image : np.ndarray
         Real or complex valued 2D or 3D image
-
-    Keywords
-    --------
-    dtype : str
-        Specify precision for pyfftw buffer.
-    overwrite_input : bool
+    overwrite_input : bool, optional
         Specify whether input data can be destroyed.
         This is useful for reducing memory usage.
         See pyfftw.builders.fftn for more.
-    threads : int
+    threads : int, optional
         Number of threads for pyfftw to use. Default
         is number of cores.
-
-    **kwargs passed to pyfftw.builders.fftn
 
     Returns
     -------
@@ -228,10 +215,9 @@ def fftn(image, overwrite_input=False, threads=-1, **kwargs):
     return fft
 
 
-def kmag_sampling(shape, real=True):
+def _kmag_sampling(shape, real=True):
     """
-    Samples the |k| coordinate system as per package pyFC.
-    Units are in inverse pixels.
+    Samples the |k| coordinate system.
 
     Parameters
     ----------

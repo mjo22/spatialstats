@@ -2,11 +2,9 @@
 Routines to calculate the static structure factor
 for a set of particles.
 
-Authors:
-    Wen Yan and Michael O'Brien (2021)
-    Biophysical Modeling Group
-    Center for Computational Biology
-    Flatiron Institute
+.. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
+.. moduleauthor:: Wen Yan
+
 """
 
 import numpy as np
@@ -22,25 +20,22 @@ def structure_factor(points, boxsize, return_rdf=False,
     Calculate the isotropic static structure factor from
     a set of particles radial distribution function.
 
-    Arguments
+    Parameters
     ---------
-    points : np.ndarray [ndim, N]
+    points : np.ndarray, shape (ndim, N)
         Particle locations, where ndim is number
         of dimensions and N is number of particles.
     boxsize : float or list of floats
         Size of the rectangular domain over which
         to apply periodic boundary conditions.
         See scipy.spatial.cKDTree documentation.
-
-    Keywords
-    --------
-    return_rdf : bool
+    return_rdf : bool, optional
         Return the rdf used to calculate structure factor.
-    qmin : float
+    qmin : float, optional
         Minimum wavenumber for Sq
-    qmax : float
+    qmax : float, optional
         Maximum wavenumber for Sq
-    dq : float
+    dq : float, optional
         Wavenumber step size
 
     **kwargs passed to rdf.

@@ -1,3 +1,9 @@
+"""
+Implementations for calculating spectral statistics of
+vector and scalar fields in two and three dimensions.
+
+.. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
+"""
 
 import spatialstats
 

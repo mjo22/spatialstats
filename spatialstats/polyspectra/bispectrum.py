@@ -5,11 +5,8 @@ This implementation works on 2D and 3D rectangular domains for real
 or complex valued data. It can compute the bispectrum exactly or
 using uniform sampling.
 
-Author:
-    Michael J. O'Brien (2021)
-    Biophysical Modeling Group
-    Center for Computational Biology
-    Flatiron Institute
+.. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
+
 """
 
 import numpy as np
@@ -26,50 +23,48 @@ def bispectrum(data, kmin=None, kmax=None,
     """
     Compute the bispectrum of 2D or 3D real or complex valued data.
 
-    Arguments
-    ---------
+    Parameters
+    ----------
     data : np.ndarray
         Real or complex valued 2D or 3D scalar data.
         The shape should be (d1, d2) or (d1, d2, d3)
         where di is the ith dimension of the image.
-
-    Keywords
-    --------
-    kmin : int
+    kmin : int, optional
         Minimum wavenumber in bispectrum calculation.
-    kmax : int
+    kmax : int, optional
         Maximum wavenumber in bispectrum calculation.
-    nsamples : int, float or np.ndarray, shape (kmax-kmin+1, kmax-kmin+1)
+    nsamples : int, float or np.ndarray, shape (kmax-kmin+1, kmax-kmin+1), optional
         Number of sample triangles or fraction of total
         possible triangles. This may be an array that
         specifies for a given k1, k2. If None, calculate
         the bispectrum exactly.
-    sample_thresh : int
+    sample_thresh : int, optional
         When the size of the sample space is greater than
         this number, start to use sampling instead of exact
         calculation. If None, switch to exact calculation
         when nsamples is less than the size of the sample space.
-    exclude : bool
+    exclude : bool, optional
         If True, exclude k1, k2 such that k1 + k2 is greater
         than the Nyquist frequency. Excluded points will be
         set to nan.
-    mean_subtract : bool
+    mean_subtract : bool, optional
         Subtract mean off of image data to highlight
         non-linearities in bicoherence.
-    compute_fft : bool
+    compute_fft : bool, optional
         If False, do not take the FFT of the input data.
-    full : bool
+    full : bool, optional
         Return the full output of calculation. Namely,
         return the optional sampling diagnostics.
-    use_pyfftw : bool
+    use_pyfftw : bool, optional
         If True, use pyfftw (see function fftn below)
         to compute the FFTs.
-    bench : bool
+    bench : bool, optional
         If True, print calculation time.
-    progress : bool
+    progress : bool, optional
         Print progress bar of calculation.
 
-    **kwargs passed to fftn (defined below)
+    **kwargs are passed to np.fft.fftn, np.fft.rfftn,
+    pyfftw.builders.fftn, or pyfftw.builders.rfftn.
 
     Returns
     -------
@@ -132,7 +127,7 @@ def bispectrum(data, kmin=None, kmax=None,
     if compute_fft:
         temp = data - data.mean() if mean_subtract else data
         if use_pyfftw:
-            fft = fftn(temp, **kwargs)
+            fft = _fftn(temp, **kwargs)
         else:
             fft = np.fft.fftn(temp, **kwargs)
         del temp
@@ -154,10 +149,10 @@ def bispectrum(data, kmin=None, kmax=None,
             nsamples = nsamples.astype(np.int_)
 
     # Run main loop
-    compute_point = compute_point3D if ndim == 3 else compute_point2D
+    compute_point = _compute_point3D if ndim == 3 else _compute_point2D
     args = (kind, kn, kcoords, fft, nsamples, sample_thresh,
             ndim, dim, shape, progress, exclude, compute_point)
-    bispec, binorm, omega, counts = compute_bispectrum(*args)
+    bispec, binorm, omega, counts = _compute_bispectrum(*args)
 
     if np.issubdtype(data.dtype, np.floating):
         bispec = bispec.real
@@ -174,8 +169,7 @@ def bispectrum(data, kmin=None, kmax=None,
         return bispec, bicoh, kn, omega, counts
 
 
-def fftn(image, overwrite_input=False, threads=-1,
-         dtype=np.complex128, **kwargs):
+def _fftn(image, overwrite_input=False, threads=-1, **kwargs):
     """
     Calculate N-dimensional fft of image with pyfftw.
     See pyfftw.builders.fftn for kwargs documentation.
@@ -184,14 +178,11 @@ def fftn(image, overwrite_input=False, threads=-1,
     ----------
     image : np.ndarray
         Real or complex valued 2D or 3D image
-
-    Keywords
-    --------
-    overwrite_input : bool
+    overwrite_input : bool, optional
         Specify whether input data can be destroyed.
         This is useful for reducing memory usage.
         See pyfftw.builders.fftn for more.
-    threads : int
+    threads : int, optional
         Number of threads for pyfftw to use. Default
         is number of cores.
 
@@ -205,20 +196,28 @@ def fftn(image, overwrite_input=False, threads=-1,
     """
     import pyfftw
 
+    if image.dtype in [np.complex64, np.complex128]:
+        dtype = 'complex128'
+        fftn = pyfftw.builders.fftn
+    elif image.dtype in [np.float32, np.float64]:
+        dtype = 'float64'
+        fftn = pyfftw.builders.rfftn
+    else:
+        raise ValueError(f"{data.dtype} is unrecognized data type.")
+
     a = pyfftw.empty_aligned(image.shape, dtype=dtype)
-    f = pyfftw.builders.fftn(a, overwrite_input=overwrite_input,
-                             threads=threads, **kwargs)
+    f = fftn(a, threads=threads, overwrite_input=overwrite_input, **kwargs)
     a[...] = image
     fft = f()
 
-    del a
+    del a, fftn
 
     return fft
 
 
 @nb.njit(parallel=True)
-def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
-                       ndim, dim, shape, progress, exclude, compute_point):
+def _compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
+                        ndim, dim, shape, progress, exclude, compute_point):
     knyq = max(shape) // 2
     bispec = np.full((dim, dim), np.nan, dtype=np.complex128)
     binorm = np.full((dim, dim), np.nan, dtype=np.float64)
@@ -258,13 +257,13 @@ def compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
             counts[i, j], counts[j, i] = N, N
         if progress:
             with nb.objmode():
-                printProgressBar(i, dim-1)
+                _printProgressBar(i, dim-1)
     return bispec, binorm, omega, counts
 
 
 @nb.njit(parallel=True, cache=True)
-def compute_point3D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
-                    samp, count, bispecbuf, binormbuf, countbuf):
+def _compute_point3D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
+                     samp, count, bispecbuf, binormbuf, countbuf):
     kx, ky, kz = kcoords[0], kcoords[1], kcoords[2]
     Nx, Ny, Nz = shape[0], shape[1], shape[2]
     for idx in nb.prange(count):
@@ -281,8 +280,8 @@ def compute_point3D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
 
 
 @nb.njit(parallel=True, cache=True)
-def compute_point2D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
-                    samp, count, bispecbuf, binormbuf, countbuf):
+def _compute_point2D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
+                     samp, count, bispecbuf, binormbuf, countbuf):
     kx, ky = kcoords[0], kcoords[1]
     Nx, Ny = shape[0], shape[1]
     for idx in nb.prange(count):
@@ -299,8 +298,8 @@ def compute_point2D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
 
 
 @nb.jit(forceobj=True, cache=True)
-def printProgressBar(iteration, total, prefix='', suffix='', decimals=1,
-                     length=50, fill='█', printEnd="\r"):
+def _printProgressBar(iteration, total, prefix='', suffix='', decimals=1,
+                      length=50, fill='█', printEnd="\r"):
     """
     Call in a loop to create terminal progress bar
 

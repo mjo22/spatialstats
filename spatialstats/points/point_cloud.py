@@ -2,11 +2,9 @@
 Routines to calculate the radial distribution function
 for a set of particles.
 
-Authors:
-    Wen Yan and Michael O'Brien (2021)
-    Biophysical Modeling Group
-    Center for Computational Biology
-    Flatiron Institute
+.. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
+.. moduleauthor:: Wen Yan
+
 """
 
 import numpy as np
@@ -23,19 +21,16 @@ def rdf(points, boxsize, rmax=None, bench=False, **kwargs):
     Works for periodic boundary conditions on rectangular
     domains.
 
-    Arguments
+    Parameters
     ---------
-    points : np.ndarray [ndim, N]
+    points : np.ndarray, shape (ndim, N)
         Particle locations, where ndim is number
         of dimensions and N is number of particles.
     boxsize : float or list of floats
         Size of the rectangular domain over which
         to apply periodic boundary conditions.
         See scipy.spatial.cKDTree documentation.
-
-    Keywords
-    --------
-    rmax : float
+    rmax : float, optional
         Cutoff radius for KDTree search
 
     **kwargs passed to gen_rdf.
@@ -59,11 +54,11 @@ def rdf(points, boxsize, rmax=None, bench=False, **kwargs):
         t0 = time()
 
     # Periodic boundary conditions
-    impose_pbc(points, boxsize)
+    _impose_pbc(points, boxsize)
 
     # Get point pairs and their displacement vectors
-    pairs = get_pairs(points, boxsize, rmax)
-    rjk = get_displacements(points, pairs, boxsize, rmax)
+    pairs = _get_pairs(points, boxsize, rmax)
+    rjk = _get_displacements(points, pairs, boxsize, rmax)
 
     # Get g(r)
     r, gr = gen_rdf(rjk, N, N/(np.prod(boxsize)),
@@ -76,7 +71,21 @@ def rdf(points, boxsize, rmax=None, bench=False, **kwargs):
 
 
 def gen_rdf(rvec, npar, density, rmin=None, rmax=None, nbins=100):
-    '''Generate radial distribution function'''
+    """
+    Generate radial distribution function
+
+    Parameters
+    ----------
+    rmin : float
+        Minimum r.
+    rmax : float
+        Maximum r. This controls the extent of the
+        KDTree search.
+    nbins : int
+        Number of bins in the radial distribution
+        function. In other words, the number of
+        points between rmin and rmax.
+    """
     ndim = rvec.shape[1]
     rnorm = np.linalg.norm(rvec, axis=1)
     rmin = 0 if rmin is None else rmin
@@ -96,7 +105,7 @@ def gen_rdf(rvec, npar, density, rmin=None, rmax=None, nbins=100):
 
 
 @nb.njit(cache=True)
-def get_displacements(coords, pairs, boxsize, rmax):
+def _get_displacements(coords, pairs, boxsize, rmax):
     '''Get displacements between pairs'''
     npairs, itpairs = len(pairs), iter(pairs)
     rvec = np.zeros((npairs, coords.shape[1]))
@@ -108,12 +117,12 @@ def get_displacements(coords, pairs, boxsize, rmax):
         if np.linalg.norm(vec01) < rmax:
             rvec[index] = vec01
         else:  # fix periodic image
-            image = closest_image(pos0, pos1, boxsize)
+            image = _closest_image(pos0, pos1, boxsize)
             rvec[index] = image-pos0
     return rvec
 
 
-def get_pairs(coords, boxsize, rmax):
+def _get_pairs(coords, boxsize, rmax):
     '''Get coordinate pairs within distance rmax'''
     tree = ss.cKDTree(coords, boxsize=boxsize)
     boxsize = np.array(boxsize)
@@ -126,7 +135,7 @@ def get_pairs(coords, boxsize, rmax):
 
 
 @nb.njit(cache=True)
-def impose_pbc(coords, boxsize):
+def _impose_pbc(coords, boxsize):
     '''Impose periodic boundary conditions for KDTree'''
     dim = len(boxsize)
     for j in range(len(coords)):
@@ -139,7 +148,7 @@ def impose_pbc(coords, boxsize):
 
 
 @nb.njit(cache=True)
-def closest_point(target, points):
+def _closest_point(target, points):
     '''Get closest points to target in 2D and 3D'''
     target = np.array(target)
     points = np.array(points)
@@ -152,7 +161,7 @@ def closest_point(target, points):
 
 
 @nb.njit(cache=True)
-def closest_point1d(target, points):
+def _closest_point1d(target, points):
     '''Get closest points to target in 1D'''
     distance = []
     for p in points:
@@ -163,13 +172,13 @@ def closest_point1d(target, points):
 
 
 @nb.njit(cache=True)
-def closest_image(target, source, boxsize):
+def _closest_image(target, source, boxsize):
     '''Get closest periodic image to target'''
     dim = target.shape[0]
     assert source.shape[0] == dim
     image = np.zeros(dim)
     for i in range(dim):
         pts = [source[i], source[i]-boxsize[i], source[i]+boxsize[i]]
-        pos, ind = closest_point1d(target[i], pts)
+        pos, ind = _closest_point1d(target[i], pts)
         image[i] = pos
     return image
