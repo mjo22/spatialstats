@@ -1,5 +1,5 @@
 """
-Bisprectrum calculation using numba acceleration
+Calculating the bispectrum using numba acceleration.
 
 This implementation works on 2D and 3D rectangular domains for real
 or complex valued data. It can compute the bispectrum exactly or

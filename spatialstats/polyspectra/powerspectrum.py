@@ -1,7 +1,7 @@
 """
-Routines to calculate power spectrum on scalar and vector image data.
+Calculating the power spectrum on scalar and vector image data.
 
-This implementation works on 1D, 2D, and 3D rectangular domains for real
+This implementation works on 2D and 3D rectangular domains for real
 or complex valued data.
 
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
@@ -19,7 +19,7 @@ def powerspectrum(data, vector=False, real=True, average=False,
                   use_pyfftw=False, bench=False, **kwargs):
     """
     Returns the radially averaged power spectrum
-    of real signal on 2 or 3 dimensional scalar or
+    of 2 or 3 dimensional scalar or
     vector data.
 
     kwargs are passed to np.fft.fftn, np.fft.rfftn,
@@ -34,7 +34,7 @@ def powerspectrum(data, vector=False, real=True, average=False,
         and di is the ith dimension of the image.
     vector : bool, optional
         Specify whether user has passed scalar or
-        vector data. If true
+        vector data.
     real : bool, optional
         If True, take the real FFT
         (see np.fft.rfftn for example).
@@ -59,12 +59,12 @@ def powerspectrum(data, vector=False, real=True, average=False,
     use_pyfftw : bool, optional
         If True, use pyfftw to compute the FFTs.
     bench : bool, optional
-        Print message for time of calculation
+        Print message for time of calculation.
 
     Returns
     -------
     spectrum : np.ndarray, shape (kmax-kmin+1,)
-        Radially averaged power spectrum
+        Radially averaged power spectrum.
     kn : np.ndarray, shape (kmax-kmin+1,)
         Corresponding bins for spectrum. Same
         size as spectrum.

@@ -13,11 +13,3 @@ Routines
    :members:
    :undoc-members:
    :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: points
-   :members:
-   :undoc-members:
-   :show-inheritance:

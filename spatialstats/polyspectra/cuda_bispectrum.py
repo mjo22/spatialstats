@@ -1,5 +1,5 @@
 """
-Bisprectrum calculation using CUDA acceleration
+Calculating the bisprectrum using CUDA acceleration.
 
 This implementation works on 2D and 3D rectangular domains for real
 or complex valued data. It can compute the bispectrum exactly or
