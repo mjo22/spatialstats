@@ -18,7 +18,6 @@ import os
 import sys
 import datetime
 from configparser import ConfigParser
-from pkg_resources import get_distribution
 
 sys.path.insert(0, os.path.abspath('../spatialstats'))
 
@@ -31,7 +30,7 @@ setup_cfg = dict(conf.items('metadata'))
 project = setup_cfg['name']
 author = setup_cfg['author']
 copyright = '{0}, {1}'.format(datetime.datetime.now().year, author)
-version = get_distribution(setup_cfg['name']).version
+version = setup_cfg['version']
 release = version
 
 
