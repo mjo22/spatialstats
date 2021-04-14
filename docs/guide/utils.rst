@@ -1,10 +1,7 @@
 utils
 =============
 
-Submodules
-----------
-
-spatialstats.utils.binning module
+spatialstats.utils.binning
 --------------------
 
 .. automodule:: spatialstats.utils.binning

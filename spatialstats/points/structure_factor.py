@@ -1,7 +1,4 @@
 """
-Routines to calculate the static structure factor
-for a set of particles.
-
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 .. moduleauthor:: Wen Yan
 
@@ -18,7 +15,7 @@ def structure_factor(points, boxsize, return_rdf=False,
                      qmin=None, qmax=None, dq=None, bench=False, **kwargs):
     """
     Calculate the isotropic static structure factor from
-    a set of particles radial distribution function.
+    the radial distribution function of a set of particles.
 
     Parameters
     ---------
@@ -38,7 +35,7 @@ def structure_factor(points, boxsize, return_rdf=False,
     dq : float, optional
         Wavenumber step size
 
-    **kwargs passed to rdf.
+    **kwargs passed to spatialstats.points.point_cloud.rdf.
 
     Returns
     -------

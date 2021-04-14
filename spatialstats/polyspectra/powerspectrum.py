@@ -1,13 +1,9 @@
 """
-Calculating the power spectrum on scalar and vector image data.
-
-This implementation works on 2D and 3D rectangular domains for real
-or complex valued data.
+Powerspectrum CPU implementation.
 
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 
 """
-
 
 import numpy as np
 from time import time

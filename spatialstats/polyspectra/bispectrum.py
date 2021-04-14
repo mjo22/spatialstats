@@ -1,9 +1,5 @@
 """
-Calculating the bispectrum using numba acceleration.
-
-This implementation works on 2D and 3D rectangular domains for real
-or complex valued data. It can compute the bispectrum exactly or
-using uniform sampling.
+Bispectrum CPU implementation.
 
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 

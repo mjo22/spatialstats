@@ -1,7 +1,4 @@
 """
-Routines to calculate the radial distribution function
-for a set of particles.
-
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 .. moduleauthor:: Wen Yan
 
@@ -13,9 +10,10 @@ import numba as nb
 from time import time
 
 
-def rdf(points, boxsize, rmax=None, bench=False, **kwargs):
+def rdf(points, boxsize, rmin=None, rmax=None,
+        nbins=100, bench=False, **kwargs):
     """
-    Calculate the radial distribution function
+    Calculate the radial distribution function g(r)
     for a group of particles in 2D or 3D.
 
     Works for periodic boundary conditions on rectangular
@@ -32,8 +30,6 @@ def rdf(points, boxsize, rmax=None, bench=False, **kwargs):
         See scipy.spatial.cKDTree documentation.
     rmax : float, optional
         Cutoff radius for KDTree search
-
-    **kwargs passed to gen_rdf.
 
     Returns
     -------
@@ -61,8 +57,8 @@ def rdf(points, boxsize, rmax=None, bench=False, **kwargs):
     rjk = _get_displacements(points, pairs, boxsize, rmax)
 
     # Get g(r)
-    r, gr = gen_rdf(rjk, N, N/(np.prod(boxsize)),
-                    rmax=rmax, **kwargs)
+    r, gr = _gen_rdf(rjk, N, N/(np.prod(boxsize)),
+                     rmin, rmax, nbins)
 
     if bench:
         print(f"Time: {time() - t0:.04f} s")
@@ -70,21 +66,9 @@ def rdf(points, boxsize, rmax=None, bench=False, **kwargs):
     return gr, r
 
 
-def gen_rdf(rvec, npar, density, rmin=None, rmax=None, nbins=100):
+def _gen_rdf(rvec, npar, density, rmin, rmax, nbins):
     """
     Generate radial distribution function
-
-    Parameters
-    ----------
-    rmin : float
-        Minimum r.
-    rmax : float
-        Maximum r. This controls the extent of the
-        KDTree search.
-    nbins : int
-        Number of bins in the radial distribution
-        function. In other words, the number of
-        points between rmin and rmax.
     """
     ndim = rvec.shape[1]
     rnorm = np.linalg.norm(rvec, axis=1)

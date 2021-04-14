@@ -1,6 +1,6 @@
 """
 Routines for averaging 2D and 3D images
-in polar and spherical coordinates
+in polar and spherical coordinates.
 
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 
@@ -17,8 +17,8 @@ def radialavg(data, center=None, dphi=None,
 
     Adapted from aziavg.py in https://github.com/davidgrier/dgmath/
 
-    Arguments
-    ---------
+    Parameters
+    ----------
     data : np.ndarray
         Two-dimensional data array.
     center : tuple, shape (2,), optional
@@ -142,8 +142,8 @@ def aziavg(data, center=None, rad=None,
 
     Extension of aziavg.py in https://github.com/davidgrier/dgmath/
 
-    Arguments
-    ---------
+    Parameters
+    ----------
     data : np.ndarray
         two-dimensional data array.
     center : tuple, shape (2,), optional
@@ -249,8 +249,8 @@ def shellavg(data, center=None, rad=None,
 
     Adapted from aziavg.py in https://github.com/davidgrier/dgmath/
 
-    Arguments
-    ---------
+    Parameters
+    ----------
     data : ndarray
         Three-dimensional data array.
     center : tuple, shape (3,), optional

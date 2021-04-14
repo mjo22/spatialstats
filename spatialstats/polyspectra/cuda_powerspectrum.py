@@ -1,14 +1,9 @@
 """
-Calculating power spectrum on scalar and vector image data
-using CuPy acceleration.
-
-This implementation works on 1D, 2D, and 3D rectangular domains for real
-or complex valued data.
+Powerspectrum GPU implementation.
 
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 
 """
-
 
 import numpy as np
 from time import time

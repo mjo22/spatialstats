@@ -1,9 +1,5 @@
 """
-Calculating the bisprectrum using CUDA acceleration.
-
-This implementation works on 2D and 3D rectangular domains for real
-or complex valued data. It can compute the bispectrum exactly or
-using uniform sampling.
+Bispectrum GPU implementation.
 
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 
@@ -23,7 +19,7 @@ def bispectrum(data, kmin=None, kmax=None,
                bench=False, progress=False, **kwargs):
     """
     Compute the bispectrum of 2D or 3D real or complex valued data
-    using CuPy acceleration.
+    using CuPy acceleration using CuPy acceleration.
 
     kwargs are passed to cupyx.scipy.fft.fftn
     or cupyx.scipy.fft.rfftn.
