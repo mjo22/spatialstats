@@ -2,6 +2,8 @@
 Routines for averaging 2D and 3D images
 in polar and spherical coordinates.
 
+Adapted from aziavg.py in https://github.com/davidgrier/dgmath/.
+
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 
 """
@@ -14,8 +16,6 @@ def radialavg(data, center=None, dphi=None,
               stdev=False, avg=True, weight=None):
     """
     Average data over bins of radial contours.
-
-    Adapted from aziavg.py in https://github.com/davidgrier/dgmath/
 
     Parameters
     ----------
@@ -140,8 +140,6 @@ def aziavg(data, center=None, rad=None,
     '''
     Average data over bins of azimuthal contours.
 
-    Extension of aziavg.py in https://github.com/davidgrier/dgmath/
-
     Parameters
     ----------
     data : `np.ndarray`
@@ -246,8 +244,6 @@ def shellavg(data, center=None, rad=None,
              avg=True, weight=None):
     """
     Average data over bins of spherical shells.
-
-    Adapted from aziavg.py in https://github.com/davidgrier/dgmath/
 
     Parameters
     ----------
