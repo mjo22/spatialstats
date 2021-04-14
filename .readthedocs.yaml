@@ -13,4 +13,5 @@ python:
     - method: pip
       path: .
       extra_requirements:
-        - docs
+        - cupy>=8.0
+	- numba>=0.50
