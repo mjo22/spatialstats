@@ -8,11 +8,9 @@ import numpy as np
 from scipy.integrate import simps
 from scipy.special import jv
 from .point_cloud import rdf
-from time import time
 
 
-def structure_factor(points, boxsize, return_rdf=False,
-                     qmin=None, qmax=None, dq=None, bench=False, **kwargs):
+def structure_factor(points, boxsize, qmin=None, qmax=None, dq=None, **kwargs):
     """
     Calculate the isotropic static structure factor from
     the radial distribution function of a set of particles.
@@ -26,24 +24,27 @@ def structure_factor(points, boxsize, return_rdf=False,
         Size of the rectangular domain over which
         to apply periodic boundary conditions.
         See scipy.spatial.cKDTree documentation.
-    return_rdf : bool, optional
-        Return the rdf used to calculate structure factor.
     qmin : float, optional
-        Minimum wavenumber for Sq
+        Minimum wavenumber for Sq.
     qmax : float, optional
-        Maximum wavenumber for Sq
+        Maximum wavenumber for Sq.
     dq : float, optional
-        Wavenumber step size
+        Wavenumber step size.
 
-    **kwargs passed to spatialstats.points.point_cloud.rdf.
+    kwargs passed to spatialstats.points.point_cloud.rdf.
 
     Returns
     -------
     Sq : np.ndarray
-        The static structure factor
+        The static structure factor.
     q : np.ndarray
         Dimensional wavenumbers discretized by 2pi/L, where
-        L is the maximum dimension of boxsize
+        L is the maximum dimension of boxsize.
+    gr : np.ndarray
+        Radial distribution function g(r).
+        See spatialstats.points.point_cloud.rdf.
+    r : np.ndarray
+        Radius r.
     """
     ndim, N = points.shape
     boxsize = boxsize if type(boxsize) is list else ndim*[boxsize]
@@ -56,9 +57,6 @@ def structure_factor(points, boxsize, return_rdf=False,
     qmin = dq if qmin is None else qmin
     qmax = 100*dq if qmax is None else qmax
     q = np.arange(qmin, qmax+dq, dq)
-
-    if bench:
-        t0 = time()
 
     # Calculate g(r) and density for integration
     gr, r = rdf(points, boxsize, **kwargs)
@@ -83,9 +81,4 @@ def structure_factor(points, boxsize, return_rdf=False,
         Sq.append(S(q[j]))
     Sq = np.array(Sq)
 
-    if bench:
-        print(f"Time: {time() - t0:.04f} s")
-
-    args = (Sq, q) if not return_rdf else (Sq, q, gr, r)
-
-    return args
+    return Sq, q, gr, r
