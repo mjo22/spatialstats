@@ -271,7 +271,7 @@ if __name__ == '__main__':
     data = fc.cube
 
     # psdFC = fc.iso_power_spec()
-    psd, kn = pspec(data)
+    psd, kn = powerspectrum(data)
 
     print(psd.mean())
 

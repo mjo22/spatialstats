@@ -629,7 +629,7 @@ if __name__ == '__main__':
     kmin, kmax = 1, 100
     bispec, bicoh, kn, omega, counts = bispectrum(data, nsamples=None,
                                                   kmin=kmin, kmax=kmax,
-                                                  progress=False, double=True,
+                                                  progress=True, double=True,
                                                   mean_subtract=True,
                                                   full=True, bench=True)
     print(bispec.mean(), bicoh.mean())

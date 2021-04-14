@@ -323,7 +323,7 @@ if __name__ == '__main__':
     np.random.seed(1234)
     data = np.random.normal(size=N**2).reshape((N, N))+1
 
-    kmin, kmax = 1, 20
+    kmin, kmax = 1, 100
     bispec, bicoh, kn, omega, counts = bispectrum(data, nsamples=None,
                                                   kmin=kmin, kmax=kmax,
                                                   progress=True,
