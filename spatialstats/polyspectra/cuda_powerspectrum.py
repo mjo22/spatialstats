@@ -25,6 +25,9 @@ def powerspectrum(data, vector=False, real=True, average=False,
     of real signal on 2 or 3 dimensional scalar or
     vector data using CuPy acceleration.
 
+    kwargs are passed to cupyx.scipy.fft.fftn
+    or cupyx.scipy.fft.rfftn.
+
     Parameters
     ----------
     data : np.ndarray
@@ -56,14 +59,8 @@ def powerspectrum(data, vector=False, real=True, average=False,
     compute_sqr : bool, optional
         If False, average the real part of the FFT.
         If True, take the square as usual.
-    use_pyfftw : bool, optional
-        If True, use pyfftw (see function fftn below)
-        to compute the FFTs.
     bench : bool, optional
         Print message for time of calculation
-
-    **kwargs are passed to cupyx.scipy.fft.fftn
-    or cupyx.scipy.fft.rfftn.
 
     Returns
     -------

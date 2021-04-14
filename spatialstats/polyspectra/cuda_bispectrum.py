@@ -22,7 +22,11 @@ def bispectrum(data, kmin=None, kmax=None,
                double=True, blocksize=128,
                bench=False, progress=False, **kwargs):
     """
-    Compute the bispectrum of 2D or 3D real or complex valued data.
+    Compute the bispectrum of 2D or 3D real or complex valued data
+    using CuPy acceleration.
+
+    kwargs are passed to cupyx.scipy.fft.fftn
+    or cupyx.scipy.fft.rfftn.
 
     Parameters
     ---------
@@ -67,9 +71,6 @@ def bispectrum(data, kmin=None, kmax=None,
         Print progress bar of calculation.
     bench : bool, optional
         If True, print calculation time.
-
-    **kwargs are passed to cupyx.scipy.fft.fftn
-    or cupyx.scipy.fft.rfftn.
 
     Returns
     -------

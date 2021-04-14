@@ -1,19 +1,13 @@
-points package
-==============
+points subpackage
+=================
 
-Submodules
-----------
-
-points.point\_cloud module
---------------------------
+Routines
+--------
 
 .. automodule:: points.point_cloud
    :members:
    :undoc-members:
    :show-inheritance:
-
-points.structure\_factor module
--------------------------------
 
 .. automodule:: points.structure_factor
    :members:

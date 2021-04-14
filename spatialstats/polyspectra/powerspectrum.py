@@ -22,7 +22,7 @@ def powerspectrum(data, vector=False, real=True, average=False,
     of real signal on 2 or 3 dimensional scalar or
     vector data.
 
-    **kwargs are passed to np.fft.fftn, np.fft.rfftn,
+    kwargs are passed to np.fft.fftn, np.fft.rfftn,
     pyfftw.builders.fftn, or pyfftw.builders.rfftn.
 
     Parameters

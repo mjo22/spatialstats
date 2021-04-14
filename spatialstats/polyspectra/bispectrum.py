@@ -23,6 +23,9 @@ def bispectrum(data, kmin=None, kmax=None,
     """
     Compute the bispectrum of 2D or 3D real or complex valued data.
 
+    kwargs are passed to np.fft.fftn, np.fft.rfftn,
+    pyfftw.builders.fftn, or pyfftw.builders.rfftn.
+
     Parameters
     ----------
     data : np.ndarray
@@ -56,15 +59,11 @@ def bispectrum(data, kmin=None, kmax=None,
         Return the full output of calculation. Namely,
         return the optional sampling diagnostics.
     use_pyfftw : bool, optional
-        If True, use pyfftw (see function fftn below)
-        to compute the FFTs.
+        If True, use pyfftw to compute the FFTs.
     bench : bool, optional
         If True, print calculation time.
     progress : bool, optional
         Print progress bar of calculation.
-
-    **kwargs are passed to np.fft.fftn, np.fft.rfftn,
-    pyfftw.builders.fftn, or pyfftw.builders.rfftn.
 
     Returns
     -------
