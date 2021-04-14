@@ -1,10 +1,10 @@
-polyspectra package
+polyspectra
 ===================
 
 Submodules
 ----------
 
-polyspectra.bispectrum module
+spatialstats.polyspectra.bispectrum module
 -----------------------------
 
 .. automodule:: spatialstats.polyspectra.bispectrum
@@ -12,7 +12,7 @@ polyspectra.bispectrum module
    :undoc-members:
    :show-inheritance:
 
-polyspectra.cuda\_bispectrum module
+spatialstats.polyspectra.cuda\_bispectrum module
 -----------------------------------
 
 .. automodule:: spatialstats.polyspectra.cuda_bispectrum
@@ -20,7 +20,7 @@ polyspectra.cuda\_bispectrum module
    :undoc-members:
    :show-inheritance:
 
-polyspectra.cuda\_powerspectrum module
+spatialstats.polyspectra.cuda\_powerspectrum module
 --------------------------------------
 
 .. automodule:: spatialstats.polyspectra.cuda_powerspectrum
@@ -28,18 +28,10 @@ polyspectra.cuda\_powerspectrum module
    :undoc-members:
    :show-inheritance:
 
-polyspectra.powerspectrum module
+spatialstats.polyspectra.powerspectrum module
 --------------------------------
 
 .. automodule:: spatialstats.polyspectra.powerspectrum
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: polyspectra
    :members:
    :undoc-members:
    :show-inheritance:

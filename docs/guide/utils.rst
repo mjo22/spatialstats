@@ -1,21 +1,13 @@
-utils package
+utils
 =============
 
 Submodules
 ----------
 
-utils.binning module
+spatialstats.utils.binning module
 --------------------
 
 .. automodule:: spatialstats.utils.binning
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: utils
    :members:
    :undoc-members:
    :show-inheritance:

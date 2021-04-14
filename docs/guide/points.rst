@@ -1,10 +1,10 @@
-points package
+points
 ==============
 
 Submodules
 ----------
 
-points.point\_cloud module
+spatialstats.points.point\_cloud module
 --------------------------
 
 .. automodule:: spatialstats.points.point_cloud
@@ -12,18 +12,10 @@ points.point\_cloud module
    :undoc-members:
    :show-inheritance:
 
-points.structure\_factor module
+spatialstats.points.structure\_factor module
 -------------------------------
 
 .. automodule:: spatialstats.points.structure_factor
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: points
    :members:
    :undoc-members:
    :show-inheritance:
