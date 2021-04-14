@@ -1,10 +1,11 @@
 .. _user_guide:
 
-User Guide
-==========
+API Reference
+=============
 
 .. toctree::
    :maxdepth: 1
 
    polyspectra
    points
+   utils
