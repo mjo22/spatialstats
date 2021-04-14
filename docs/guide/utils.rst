@@ -7,7 +7,7 @@ Submodules
 utils.binning module
 --------------------
 
-.. automodule:: utils.binning
+.. automodule:: spatialstats.utils.binning
    :members:
    :undoc-members:
    :show-inheritance:

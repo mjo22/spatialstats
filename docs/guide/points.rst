@@ -7,7 +7,7 @@ Submodules
 points.point\_cloud module
 --------------------------
 
-.. automodule:: points.point_cloud
+.. automodule:: spatialstats.points.point_cloud
    :members:
    :undoc-members:
    :show-inheritance:
@@ -15,7 +15,7 @@ points.point\_cloud module
 points.structure\_factor module
 -------------------------------
 
-.. automodule:: points.structure_factor
+.. automodule:: spatialstats.points.structure_factor
    :members:
    :undoc-members:
    :show-inheritance:

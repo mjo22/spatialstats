@@ -15,13 +15,13 @@
 # sys.path.insert(0, os.path.abspath('.'))
 
 import os
-import sys
+#import sys
 import datetime
 from configparser import ConfigParser
 
-sys.path.insert(0, os.path.abspath('../spatialstats/polyspectra'))
-sys.path.insert(0, os.path.abspath('../spatialstats/points'))
-sys.path.insert(0, os.path.abspath('../spatialstats/utils'))
+#sys.path.insert(0, os.path.abspath('../spatialstats/polyspectra'))
+#sys.path.insert(0, os.path.abspath('../spatialstats/points'))
+#sys.path.insert(0, os.path.abspath('../spatialstats/utils'))
 
 conf = ConfigParser()
 conf.read([os.path.join(os.path.dirname(__file__), '..', 'setup.cfg')])
