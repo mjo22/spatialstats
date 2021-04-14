@@ -6,5 +6,4 @@ point distributions.
 .. moduleauthor:: Wen Yan
 """
 
-from .point_cloud import rdf
-from .structure_factor import structure_factor
+from .point_cloud import rdf, structure_factor

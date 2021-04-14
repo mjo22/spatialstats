@@ -1,8 +1,8 @@
 utils
 =============
 
-spatialstats.utils.binning
---------------------
+Averaging
+---------
 
 .. automodule:: spatialstats.utils.binning
    :members:

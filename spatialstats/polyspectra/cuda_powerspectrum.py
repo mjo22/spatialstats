@@ -11,81 +11,75 @@ import cupy as cp
 from cupyx.scipy import fft as cufft
 
 
-def powerspectrum(data, vector=False, real=True, average=False,
+def powerspectrum(*U, average=False,
                   kmin=None, kmax=None, npts=None,
-                  compute_fft=True, compute_sqr=True, bench=False,
-                  **kwargs):
+                  compute_fft=True, compute_sqr=True,
+                  double=True, bench=False, **kwargs):
     """
     Returns the radially averaged power spectrum
-    of real signal on 2 or 3 dimensional scalar or
+    of 1, 2, or 3 dimensional scalar or
     vector data using CuPy acceleration.
-
-    kwargs are passed to cupyx.scipy.fft.fftn
-    or cupyx.scipy.fft.rfftn.
 
     Parameters
     ----------
-    data : np.ndarray
-        Real or complex valued 2D or 3D vector or scalar data.
-        If vector data, the shape should be (n, d1, d2) or
-        (n, d1, d2, d3) where n is the number of vector components
-        and di is the ith dimension of the image.
-    vector : bool, optional
-        Specify whether user has passed scalar or
-        vector data.
-    real : bool, optional
-        If True, take the real FFT
-        (see np.fft.rfftn for example).
-        This is useful for saving memory when working
-        with real data.
-    average : bool, optional
+    U : `np.ndarray` or `cp.ndarray`
+        Real or complex vector or scalar data.
+        If vector data, pass arguments as U1, U2, ..., Un
+        where Ui is the ith vector component.
+        Each Ui can be 1D, 2D, or 3D and all must be the
+        same shape. The number of arrays passed is the number
+        of vector components.
+    average : `bool`, optional
         If True, average over values in a given
-        bin. If False, add values.
-    kmin : float or int, optional
+        bin and multiply by bin volume.
+        If False, compute the sum.
+    kmin : `float` or `int`, optional
         Minimum k in powerspectrum bins. If None,
         use 1.
-    kmax : float or int, optional
+    kmax : `float` or `int`, optional
         Maximum k in powerspectrum bins. If None,
-        use highest mode from FFT.
-    npts : int, optional
-        Number of modes between [kmin, kmax]
-    compute_fft : bool, optional
+        use Nyquist frequency.
+    npts : `int`, optional
+        Number of modes between [`kmin`, `kmax`]
+    compute_fft : `bool`, optional
         If False, do not take the FFT of the input data.
-    compute_sqr : bool, optional
+    compute_sqr : `bool`, optional
         If False, average the real part of the FFT.
         If True, take the square as usual.
-    bench : bool, optional
+    double : `bool`, optional
+        If False, calculate FFTs in single precision.
+        Useful for saving memory.
+    bench : `bool`, optional
         Print message for time of calculation.
+    kwargs
+        Additional keyword arguments passed to
+        `cupyx.scipy.fft.fftn` or `cupyx.scipy.fft.rfftn`.
 
     Returns
     -------
-    spectrum : np.ndarray, shape (kmax-kmin+1,)
+    spectrum : `np.ndarray`, shape `(kmax-kmin+1,)`
         Radially averaged power spectrum.
-    kn : np.ndarray, shape (kmax-kmin+1,)
+    kn : `np.ndarray`, shape `(npts,)`
         Corresponding bins for spectrum. Same
         size as spectrum.
     """
     if bench:
         t0 = time()
 
-    if vector:
-        shape = data[0].shape
-        ndim = data[0].ndim
-        ncomp = data.shape[0]
-        N = max(data[0].shape)
-    else:
-        shape = data.shape
-        ndim = data.ndim
-        ncomp = 1
-        N = max(data.shape)
+    shape = U[0].shape
+    ndim = U[0].ndim
+    ncomp = len(U)
+    N = max(U[0].shape)
 
-    if real:
-        dtype = np.float64
+    if np.issubdtype(U[0].dtype, np.floating):
+        real = True
+        dtype = cp.float64 if double else cp.float32
     else:
-        dtype = np.complex128
+        real = False
+        dtype = cp.complex128 if double else cp.complex64
 
     if ndim not in [1, 2, 3]:
-        raise ValueError("Dimension of image must be 2 or 3.")
+        raise ValueError("Dimension of image must be 1, 2, or 3.")
 
     # Get memory pools
     mempool = cp.get_default_memory_pool()
@@ -94,10 +88,10 @@ def powerspectrum(data, vector=False, real=True, average=False,
     # Compute power spectral density with memory efficiency
     density = None
     comp = cp.empty(shape, dtype=dtype)
-    norm = np.float64(comp.size)
     for i in range(ncomp):
-        temp = cp.asarray(data[i]) if vector else cp.asarray(data)
+        temp = cp.asarray(U[i], dtype=dtype)
         comp[...] = temp
+        del temp
         if compute_fft:
             fft = _cufftn(comp, **kwargs)
         else:
@@ -108,17 +102,14 @@ def powerspectrum(data, vector=False, real=True, average=False,
         if compute_sqr:
             density[...] += _mod_squared(fft)
         else:
-            density[...] += np.real(fft)
-        del fft, temp
+            density[...] += cp.real(fft)
+        del fft
         mempool.free_all_blocks()
         pinned_mempool.free_all_blocks()
 
-    # Normalize FFT
-    fac = 2. if real else 1.
-    if compute_sqr:
-        density[...] *= fac/norm**2
-    else:
-        density[...] *= fac/norm
+    # Need to double count if using rfftn
+    if real:
+        density[...] *= 2
 
     # Get radial coordinates
     kr = cp.asarray(_kmag_sampling(fftshape, real=real).astype(np.float32))
@@ -133,10 +124,10 @@ def powerspectrum(data, vector=False, real=True, average=False,
     if kmax is None:
         kmax = int(N/2)
     if npts is None:
-        npts = kmax - kmin
+        npts = kmax-kmin+1
 
     # Generate bins
-    kn = cp.linspace(kmin, kmax, npts, endpoint=False)  # Left edges of bins
+    kn = cp.linspace(kmin, kmax, npts, endpoint=True)  # Left edges of bins
     dk = kn[1] - kn[0]
     kn += dk/2  # Convert kn to bin centers.
 
@@ -173,23 +164,6 @@ def _cufftn(data, overwrite_input=False, **kwargs):
     """
     Calculate the N-dimensional fft of an image
     with memory efficiency
-
-    Parameters
-    ----------
-    data : cupy.ndarray
-        Real or complex valued 2D or 3D image
-    overwrite_input : bool, optional
-        Specify whether input data can be destroyed.
-        This is useful if low on memory.
-        See cupyx.scipy.fft.fftn for more.
-
-    **kwargs passed to cupyx.scipy.fft.fftn
-
-    Returns
-    -------
-    fft : cupy.ndarray
-        The fft. Will be the shape of the input image
-        or the user specified shape.
     """
     # Get memory pools
     mempool = cp.get_default_memory_pool()
@@ -228,17 +202,6 @@ def _mod_squared(a):
 def _kmag_sampling(shape, real=True):
     """
     Generates the |k| coordinate system.
-
-    Parameters
-    ----------
-    shape : tuple
-        Shape of 1D, 2D, or 3D FFT
-
-    Returns
-    -------
-    kmag : np.ndarray
-        Samples of k vector magnitudes on coordinate
-        system of size shape
     """
     if real:
         freq = np.fft.rfftfreq
@@ -281,9 +244,9 @@ if __name__ == '__main__':
     data = fc.cube
 
     # psdFC = fc.iso_power_spec()
-    psd, kn = powerspectrum(data, real=True, bench=True, average=True)
+    psd, kn = powerspectrum(data)
 
-    print(psd.mean())
+    print(psd.mean(), psd.max())
 
     def zero_log10(s):
         '''

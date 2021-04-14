@@ -1,12 +1,10 @@
 points
 ==============
 
-.. automodule:: spatialstats.points.point_cloud
-   :members:
-   :undoc-members:
-   :show-inheritance:
+Radial distribution function
+----------------------------
 
-.. automodule:: spatialstats.points.structure_factor
+.. automodule:: spatialstats.points.point_cloud
    :members:
    :undoc-members:
    :show-inheritance:

@@ -19,60 +19,59 @@ def bispectrum(data, kmin=None, kmax=None,
     """
     Compute the bispectrum of 2D or 3D real or complex valued data.
 
-    kwargs are passed to np.fft.fftn, np.fft.rfftn,
-    pyfftw.builders.fftn, or pyfftw.builders.rfftn.
-
     Parameters
     ----------
-    data : np.ndarray
+    data : `np.ndarray`
         Real or complex valued 2D or 3D scalar data.
-        The shape should be (d1, d2) or (d1, d2, d3)
-        where di is the ith dimension of the image.
-    kmin : int, optional
+    kmin : `int`, optional
         Minimum wavenumber in bispectrum calculation.
-    kmax : int, optional
+    kmax : `int`, optional
         Maximum wavenumber in bispectrum calculation.
-    nsamples : int, float or np.ndarray, shape (kmax-kmin+1, kmax-kmin+1), optional
+    nsamples : `int`, `float` or `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of sample triangles or fraction of total
         possible triangles. This may be an array that
         specifies for a given k1, k2. If None, calculate
         the bispectrum exactly.
-    sample_thresh : int, optional
+    sample_thresh : `int`, optional
         When the size of the sample space is greater than
         this number, start to use sampling instead of exact
         calculation. If None, switch to exact calculation
         when nsamples is less than the size of the sample space.
-    exclude : bool, optional
+    exclude : `bool`, optional
         If True, exclude k1, k2 such that k1 + k2 is greater
         than the Nyquist frequency. Excluded points will be
         set to nan.
-    mean_subtract : bool, optional
+    mean_subtract : `bool`, optional
         Subtract mean off of image data to highlight
         non-linearities in bicoherence.
-    compute_fft : bool, optional
+    compute_fft : `bool`, optional
         If False, do not take the FFT of the input data.
-    full : bool, optional
+    full : `bool`, optional
         Return the full output of calculation. Namely,
         return the optional sampling diagnostics.
-    use_pyfftw : bool, optional
+    use_pyfftw : `bool`, optional
         If True, use pyfftw to compute the FFTs.
-    bench : bool, optional
+    bench : `bool`, optional
         If True, print calculation time.
-    progress : bool, optional
+    progress : `bool`, optional
         Print progress bar of calculation.
+    kwargs
+        Additional keyword arguments passed to
+        `np.fft.fftn`, `np.fft.rfftn`, `pyfftw.builders.fftn`,
+        or `pyfftw.builders.rfftn`.
 
     Returns
     -------
-    bispec : np.ndarray, shape (kmax-kmin+1, kmax-kmin+1)
+    bispec : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`
         Real or complex-valued bispectrum.
         Will be real-valued if the input data is real.
-    bicoh : np.ndarray, shape (kmax-kmin+1, kmax-kmin+1)
+    bicoh : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`
         Real-valued bicoherence.
-    kn : np.ndarray
+    kn : `np.ndarray`
         Wavenumbers along axis of bispectrum.
-    omega : np.ndarray, shape (kmax-kmin+1, kmax-kmin+1), optional
+    omega : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of possible triangles in the sample space.
-    counts : np.ndarray, shape (kmax-kmin+1, kmax-kmin+1), optional
+    counts : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of evaluations in the bispectrum sum.
     """
 

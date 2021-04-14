@@ -1,4 +1,10 @@
 """
+Routines to calculate the radial distribution function g(r)
+and isotropic structure factor S(q).
+
+See https://en.wikipedia.org/wiki/Radial_distribution_function
+to learn more.
+
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 .. moduleauthor:: Wen Yan
 
@@ -7,7 +13,75 @@
 import numpy as np
 import scipy.spatial as ss
 import numba as nb
+from scipy.integrate import simps
+from scipy.special import jv
 from time import time
+
+
+def structure_factor(gr, r, N, boxsize,
+                     qmin=None, qmax=None, dq=None, **kwargs):
+    """
+    Calculate the isotropic structure factor S(q) from
+    the radial distribution function g(r) of a set of particles.
+
+    Parameters
+    ----------
+    gr : `np.ndarray`
+        The radial distribution function outputted
+        from `spatialstats.points.point_cloud.rdf`.
+    r : `np.ndarray`
+        The domain of the radial distribution function
+        outputted from `spatialstats.points.point_cloud.rdf`.
+    N : `int`
+        The number of particles.
+    boxsize : `list` of `float`
+        The rectangular domain over which
+        to apply periodic boundary conditions.
+        See `scipy.spatial.cKDTree` documentation.
+    qmin : `float`, optional
+        Minimum wavenumber for S(q). Default is ``dq``.
+    qmax : `float`, optional
+        Maximum wavenumber for S(q). Default is ``100*dq``
+    dq : `float`, optional
+        Wavenumber step size. Default is ``2*np.pi/L``, where
+        ``L = max(boxsize)``.
+
+    Returns
+    -------
+    Sq : `np.ndarray`
+        The static structure factor.
+    q : `np.ndarray`
+        Dimensional wavenumbers discretized by ``2*np.pi/L``, where
+        ``L = max(boxsize)``.
+    """
+    ndim = len(boxsize)
+
+    if ndim not in [2, 3]:
+        raise ValueError("Dimension of space must be 2 or 3")
+
+    # Generate wavenumbers
+    dq = (2*np.pi / max(boxsize)) if dq is None else dq
+    qmin = dq if qmin is None else qmin
+    qmax = 100*dq if qmax is None else qmax
+    q = np.arange(qmin, qmax+dq, dq)
+
+    def S(q):
+        '''Integrand for isotropic structure factor'''
+        rho = N/np.prod(boxsize)
+        if ndim == 3:
+            f = np.sin(q*r)*r*(gr-1)
+            return 1+4*np.pi*rho*simps(f, r)/q
+        else:
+            f = jv(0, q*r)*r*(gr-1)
+            return 1+2*np.pi*rho*simps(f, r)
+
+    # Integrate for all q
+    Sq = []
+    for j in range(len(q)):
+        Sq.append(S(q[j]))
+    Sq = np.array(Sq)
+
+    return Sq, q
 
 
 def rdf(points, boxsize, rmin=None, rmax=None, npts=100, bench=False):
@@ -20,35 +94,34 @@ def rdf(points, boxsize, rmin=None, rmax=None, npts=100, bench=False):
 
     Parameters
     ---------
-    points : np.ndarray, shape (ndim, N)
+    points : `np.ndarray`, shape `(ndim, N)`
         Particle locations, where ndim is number
         of dimensions and N is number of particles.
-    boxsize : float or list of floats
-        Size of the rectangular domain over which
+    boxsize : `list` of `float`
+        The rectangular domain over which
         to apply periodic boundary conditions.
-        See scipy.spatial.cKDTree documentation.
-    rmin : float, optional
+        See `scipy.spatial.cKDTree` documentation.
+    rmin : `float`, optional
         Minimum r value in g(r).
-    rmax : float, optional
+    rmax : `float`, optional
         Cutoff radius for KDTree search and
         maximum r value in g(r). Default is
         maximum distance between any pair of
         particles.
-    npts : int, optional
-        Number points between [rmin, rmax] in
+    npts : `int`, optional
+        Number points between [`rmin`, `rmax`] in
         g(r).
-    bench : bool, optional
+    bench : `bool`, optional
         Print message for time of calculation.
     Returns
     -------
-    gr : np.ndarray
+    gr : `np.ndarray`
         Radial distribution function g(r).
-    r : np.ndarray
+    r : `np.ndarray`
         Radius r.
     """
     ndim, N = points.shape
     points = points.T
-    boxsize = boxsize if type(boxsize) is list else ndim*[boxsize]
     rmax = min(boxsize)/2 if rmax is None else rmax
 
     if ndim not in [2, 3]:

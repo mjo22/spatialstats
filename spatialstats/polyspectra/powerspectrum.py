@@ -9,90 +9,74 @@ import numpy as np
 from time import time
 
 
-def powerspectrum(data, vector=False, real=True, average=False,
+def powerspectrum(*U, average=False,
                   kmin=None, kmax=None, npts=None,
                   compute_fft=True, compute_sqr=True,
                   use_pyfftw=False, bench=False, **kwargs):
     """
     Returns the radially averaged power spectrum
-    of 2 or 3 dimensional scalar or
+    of 1, 2, or 3 dimensional scalar or
     vector data.
-
-    kwargs are passed to np.fft.fftn, np.fft.rfftn,
-    pyfftw.builders.fftn, or pyfftw.builders.rfftn.
 
     Parameters
     ----------
-    data : np.ndarray
-        Real or complex valued 2D or 3D vector or scalar data.
-        If vector data, the shape should be (n, d1, d2) or
-        (n, d1, d2, d3) where n is the number of vector components
-        and di is the ith dimension of the image.
-    vector : bool, optional
-        Specify whether user has passed scalar or
-        vector data.
-    real : bool, optional
-        If True, take the real FFT
-        (see np.fft.rfftn for example).
-        This is useful for saving memory when working
-        with real data.
-    average : bool, optional
+    U : `np.ndarray`
+        Real or complex vector or scalar data.
+        If vector data, pass arguments as U1, U2, ..., Un
+        where Ui is the ith vector component.
+        Each Ui can be 1D, 2D, or 3D and all must be the
+        same shape. The number of arrays passed is the number
+        of vector components.
+    average : `bool`, optional
         If True, average over values in a given
-        bin. If False, add values.
-    kmin : float or int, optional
+        bin and multiply by bin volume.
+        If False, compute the sum.
+    kmin : `float` or `int`, optional
         Minimum k in powerspectrum bins. If None,
         use 1.
-    kmax : float or int, optional
+    kmax : `float` or `int`, optional
         Maximum k in powerspectrum bins. If None,
-        use highest mode from FFT.
-    npts : int, optional
-        Number of modes between [kmin, kmax]
-    compute_fft : bool, optional
+        use Nyquist frequency.
+    npts : `int`, optional
+        Number of modes between [`kmin`, `kmax`]
+    compute_fft : `bool`, optional
         If False, do not take the FFT of the input data.
-    compute_sqr : bool, optional
+    compute_sqr : `bool`, optional
         If False, average the real part of the FFT.
         If True, take the square as usual.
-    use_pyfftw : bool, optional
+    use_pyfftw : `bool`, optional
         If True, use pyfftw to compute the FFTs.
-    bench : bool, optional
+    bench : `bool`, optional
         Print message for time of calculation.
+    kwargs
+        Additional keyword arguments passed to
+        `np.fft.fftn`, `np.fft.rfftn`, `pyfftw.builders.fftn`,
+        or `pyfftw.builders.rfftn`.
 
     Returns
     -------
-    spectrum : np.ndarray, shape (kmax-kmin+1,)
+    spectrum : `np.ndarray`, shape `(npts,)`
         Radially averaged power spectrum.
-    kn : np.ndarray, shape (kmax-kmin+1,)
+    kn : `np.ndarray`, shape `(npts,)`
         Corresponding bins for spectrum. Same
         size as spectrum.
     """
     if bench:
         t0 = time()
 
-    if vector:
-        shape = data[0].shape
-        ndim = data[0].ndim
-        ncomp = data.shape[0]
-        N = max(data[0].shape)
-    else:
-        shape = data.shape
-        ndim = data.ndim
-        ncomp = 1
-        N = max(data.shape)
+    ndim = U[0].ndim
+    ncomp = len(U)
+    N = max(U[0].shape)
 
-    if real:
-        dtype = np.float64
-    else:
-        dtype = np.complex128
+    real = True if np.issubdtype(U[0].dtype, np.floating) else False
 
     if ndim not in [1, 2, 3]:
         raise ValueError("Dimension of image must be 1, 2, or 3.")
 
     # Compute FFT
     density = None
-    comp = np.empty(shape, dtype=dtype)
-    norm = np.float64(comp.size)
     for i in range(ncomp):
-        comp[...] = data[i] if vector else data
+        comp = U[i]
         if compute_fft:
             # Compute fft of a component
             if use_pyfftw:
@@ -114,14 +98,9 @@ def powerspectrum(data, vector=False, real=True, average=False,
             density[...] += np.real(fft)
         del fft
 
-    # Normalize FFT
-    fac = 2. if real else 1.
-    if compute_sqr:
-        density[...] *= fac/norm**2
-    else:
-        density[...] *= fac/norm
-
-    del data
+    # Need to double count if using rfftn
+    if real:
+        density[...] *= 2.
 
     # Compute radial coordinates
     kr = _kmag_sampling(fftshape, real=real)
@@ -136,10 +115,10 @@ def powerspectrum(data, vector=False, real=True, average=False,
     if kmax is None:
         kmax = int(N/2)
     if npts is None:
-        npts = kmax - kmin
+        npts = kmax-kmin+1
 
     # Generate bins
-    kn = np.linspace(kmin, kmax, npts, endpoint=False)  # Left edges of bins
+    kn = np.linspace(kmin, kmax, npts, endpoint=True)  # Left edges of bins
     dk = kn[1] - kn[0]
     kn += dk/2  # Convert kn to bin centers.
 
@@ -171,24 +150,6 @@ def _fftn(image, overwrite_input=False, threads=-1, **kwargs):
     """
     Calculate N-dimensional fft of image with pyfftw.
     See pyfftw.builders.fftn for kwargs documentation.
-
-    Parameters
-    ----------
-    image : np.ndarray
-        Real or complex valued 2D or 3D image
-    overwrite_input : bool, optional
-        Specify whether input data can be destroyed.
-        This is useful for reducing memory usage.
-        See pyfftw.builders.fftn for more.
-    threads : int, optional
-        Number of threads for pyfftw to use. Default
-        is number of cores.
-
-    Returns
-    -------
-    fft : np.ndarray
-        The fft. Will be the shape of the input image
-        or the user specified shape.
     """
     import pyfftw
 
@@ -214,17 +175,6 @@ def _fftn(image, overwrite_input=False, threads=-1, **kwargs):
 def _kmag_sampling(shape, real=True):
     """
     Samples the |k| coordinate system.
-
-    Parameters
-    ----------
-    shape : tuple
-        Shape of 1D, 2D, or 3D FFT
-
-    Returns
-    -------
-    kmag : np.ndarray
-        Samples of k vector magnitudes on coordinate
-        system of size shape
     """
     if real:
         freq = np.fft.rfftfreq

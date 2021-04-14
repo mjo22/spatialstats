@@ -2,7 +2,7 @@ polyspectra
 ===================
 
 
-Bispectrum implementations
+Bispectrum
 -----------------------------
 
 .. automodule:: spatialstats.polyspectra.bispectrum
@@ -15,15 +15,15 @@ Bispectrum implementations
    :undoc-members:
    :show-inheritance:
 
-Power spectrum implementations
+Power spectrum
 --------------------------------------
 
-.. automodule:: spatialstats.polyspectra.cuda_powerspectrum
+.. automodule:: spatialstats.polyspectra.powerspectrum
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: spatialstats.polyspectra.powerspectrum
+.. automodule:: spatialstats.polyspectra.cuda_powerspectrum
    :members:
    :undoc-members:
    :show-inheritance:
