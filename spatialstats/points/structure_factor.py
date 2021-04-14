@@ -15,6 +15,8 @@ def structure_factor(points, boxsize, qmin=None, qmax=None, dq=None, **kwargs):
     Calculate the isotropic static structure factor from
     the radial distribution function of a set of particles.
 
+    kwargs passed to spatialstats.points.point_cloud.rdf.
+
     Parameters
     ---------
     points : np.ndarray, shape (ndim, N)
@@ -30,8 +32,6 @@ def structure_factor(points, boxsize, qmin=None, qmax=None, dq=None, **kwargs):
         Maximum wavenumber for Sq.
     dq : float, optional
         Wavenumber step size.
-
-    kwargs passed to spatialstats.points.point_cloud.rdf.
 
     Returns
     -------
