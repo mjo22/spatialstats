@@ -5,8 +5,9 @@ and isotropic structure factor S(q).
 See https://en.wikipedia.org/wiki/Radial_distribution_function
 to learn more.
 
+Adapted from https://github.com/wenyan4work/point_cloud.
+
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
-.. moduleauthor:: Wen Yan
 
 """
 
@@ -41,7 +42,7 @@ def structure_factor(gr, r, N, boxsize,
     qmin : `float`, optional
         Minimum wavenumber for S(q). Default is ``dq``.
     qmax : `float`, optional
-        Maximum wavenumber for S(q). Default is ``100*dq``
+        Maximum wavenumber for S(q). Default is ``200*dq``
     dq : `float`, optional
         Wavenumber step size. Default is ``2*np.pi/L``, where
         ``L = max(boxsize)``.
@@ -62,7 +63,7 @@ def structure_factor(gr, r, N, boxsize,
     # Generate wavenumbers
     dq = (2*np.pi / max(boxsize)) if dq is None else dq
     qmin = dq if qmin is None else qmin
-    qmax = 100*dq if qmax is None else qmax
+    qmax = 200*dq if qmax is None else qmax
     q = np.arange(qmin, qmax+dq, dq)
 
     def S(q):
@@ -94,7 +95,7 @@ def rdf(points, boxsize, rmin=None, rmax=None, npts=100, bench=False):
 
     Parameters
     ---------
-    points : `np.ndarray`, shape `(ndim, N)`
+    points : `np.ndarray`, shape `(N, ndim)`
         Particle locations, where ndim is number
         of dimensions and N is number of particles.
     boxsize : `list` of `float`
@@ -120,9 +121,9 @@ def rdf(points, boxsize, rmin=None, rmax=None, npts=100, bench=False):
     r : `np.ndarray`
         Radius r.
     """
-    ndim, N = points.shape
-    points = points.T
+    N, ndim = points.shape
     rmax = min(boxsize)/2 if rmax is None else rmax
+    boxsize = np.array(boxsize)
 
     if ndim not in [2, 3]:
         raise ValueError("Dimension of space must be 2 or 3")
@@ -167,13 +168,13 @@ def _gen_rdf(rvec, npar, density, rmin, rmax, nbins):
     return r, rdf
 
 
-@nb.njit(cache=True)
+@nb.njit(parallel=True, cache=True)
 def _get_displacements(coords, pairs, boxsize, rmax):
     '''Get displacements between pairs'''
-    npairs, itpairs = len(pairs), iter(pairs)
+    npairs = pairs.shape[0]
     rvec = np.zeros((npairs, coords.shape[1]))
-    for index in range(npairs):
-        pair = next(itpairs)
+    for index in nb.prange(npairs):
+        pair = pairs[index]
         id0, id1 = pair
         pos0, pos1 = coords[id0], coords[id1]
         vec01 = pos1-pos0
@@ -188,12 +189,13 @@ def _get_displacements(coords, pairs, boxsize, rmax):
 def _get_pairs(coords, boxsize, rmax):
     '''Get coordinate pairs within distance rmax'''
     tree = ss.cKDTree(coords, boxsize=boxsize)
-    boxsize = np.array(boxsize)
-    pairs = tree.query_pairs(r=rmax)  # this returns only pairs (i<j)
-    pairs2 = set()
-    for p in pairs:
-        pairs2.add((p[1], p[0]))
-    pairs.update(pairs2)
+    # Get unique pairs (i<j)
+    temp = np.array(list(tree.query_pairs(r=rmax)), dtype=np.int)
+    # Get rest of the pairs (i>=j)
+    npairs = len(temp)
+    pairs = np.zeros(shape=(2*npairs, 2), dtype=np.int)
+    pairs[:npairs, :] = temp
+    pairs[npairs:, :] = temp[:, [1, 0]]
     return pairs
 
 
@@ -245,3 +247,28 @@ def _closest_image(target, source, boxsize):
         pos, ind = _closest_point1d(target[i], pts)
         image[i] = pos
     return image
+
+
+if __name__ == "__main__":
+
+    from matplotlib import pyplot as plt
+
+    N = 2000
+    boxsize = [100, 100]
+    data = np.random.rand(N, 2)*100
+    rmax = boxsize[0]/4
+
+    gr, r = rdf(data, boxsize, rmax=rmax, npts=200)
+
+    Sq, q = structure_factor(gr, r, N, boxsize, qmin=0, qmax=100, dq=.5)
+
+    fig, axes = plt.subplots(ncols=2)
+    axes[0].plot(r, gr)
+    axes[0].set_xlabel("$r$")
+    axes[0].set_ylabel("$g(r)$")
+
+    axes[1].plot(q, Sq)
+    axes[1].set_xlabel("$q$")
+    axes[1].set_ylabel("$S(q)$")
+
+    plt.show()
