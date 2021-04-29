@@ -27,11 +27,10 @@ def bispectrum(*U, kmin=None, kmax=None,
         Real or complex vector or scalar data.
         If vector data, pass arguments as U1, U2 or
         U1, U2, U3 where Ui is the ith vector component.
-        Each Ui can be 2D or 3D and all must be the
-        same shape and dtype. The number of arrays passed
-        is the number of vector components.
+        Each Ui should be 2D or 3D (respectively) and
+        must have the same shape and dtype.
         If Ui are type `cp.ndarray` and complex valued, it will
-        be overwritten when taking FFTs to save memory.
+        by default be overwritten when taking FFTs to save memory.
     kmin : `int`, optional
         Minimum wavenumber in bispectrum calculation.
     kmax : `int`, optional
