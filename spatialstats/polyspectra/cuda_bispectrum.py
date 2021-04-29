@@ -68,7 +68,7 @@ def bispectrum(*U, kmin=None, kmax=None,
         If True, print calculation time.
     kwargs
         Additional keyword arguments passed to
-        `cupyx.scipy.fft.fftn` or `cupyx.scipy.fft.rfftn`.
+        `cupyx.scipy.fft.fftn`.
 
     Returns
     -------

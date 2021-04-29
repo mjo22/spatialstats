@@ -63,8 +63,7 @@ def bispectrum(*U, kmin=None, kmax=None,
         Print progress bar of calculation.
     kwargs
         Additional keyword arguments passed to
-        `np.fft.fftn`, `np.fft.rfftn`, `pyfftw.builders.fftn`,
-        or `pyfftw.builders.rfftn`.
+        `np.fft.fftn` or `pyfftw.builders.fftn`.
 
     Returns
     -------
