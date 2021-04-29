@@ -10,19 +10,25 @@ import numba as nb
 from time import time
 
 
-def bispectrum(data, kmin=None, kmax=None,
+def bispectrum(*U, kmin=None, kmax=None,
                nsamples=None, sample_thresh=None,
                exclude=False, mean_subtract=False,
                compute_fft=True, full=False,
                use_pyfftw=False,
                bench=False, progress=False, **kwargs):
     """
-    Compute the bispectrum of 2D or 3D real or complex valued data.
+    Compute the bispectrum of 2D or 3D real or complex valued
+    scalar or vector data.
 
     Parameters
     ----------
-    data : `np.ndarray`
-        Real or complex valued 2D or 3D scalar data.
+    U : `np.ndarray`
+        Real or complex vector or scalar data.
+        If vector data, pass arguments as U1, U2, ..., Un,
+        where Ui is the ith vector component.
+        Each Ui can be 2D or 3D and all must be the
+        same shape and dtype. The number of arrays passed
+        is the number of vector components.
     kmin : `int`, optional
         Minimum wavenumber in bispectrum calculation.
     kmax : `int`, optional
@@ -42,7 +48,7 @@ def bispectrum(data, kmin=None, kmax=None,
         than the Nyquist frequency. Excluded points will be
         set to nan.
     mean_subtract : `bool`, optional
-        Subtract mean off of image data to highlight
+        Subtract mean off of input data to highlight
         non-linearities in bicoherence.
     compute_fft : `bool`, optional
         If False, do not take the FFT of the input data.
@@ -74,8 +80,8 @@ def bispectrum(data, kmin=None, kmax=None,
     counts : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of evaluations in the bispectrum sum.
     """
-
-    shape, ndim = nb.typed.List(data.shape), data.ndim
+    shape, ndim = nb.typed.List(U[0].shape), U[0].ndim
+    ncomp = len(U)
 
     if ndim not in [2, 3]:
         raise ValueError("Data must be 2D or 3D.")
@@ -118,15 +124,18 @@ def bispectrum(data, kmin=None, kmax=None,
     del kbinned
 
     # FFT
-    if compute_fft:
-        temp = data - data.mean() if mean_subtract else data
-        if use_pyfftw:
-            fft = _fftn(temp, **kwargs)
+    ffts = []
+    for i in range(ncomp):
+        if compute_fft:
+            temp = U[i] - U[i].mean() if mean_subtract else U[i]
+            if use_pyfftw:
+                fft = _fftn(temp, **kwargs)
+            else:
+                fft = np.fft.fftn(temp, **kwargs)
+            del temp
         else:
-            fft = np.fft.fftn(temp, **kwargs)
-        del temp
-    else:
-        fft = data
+            fft = U[i]
+        ffts.append(fft)
 
     if sample_thresh is None:
         sample_thresh = np.iinfo(np.int64).max
@@ -143,12 +152,12 @@ def bispectrum(data, kmin=None, kmax=None,
             nsamples = nsamples.astype(np.int_)
 
     # Run main loop
-    compute_point = _compute_point3D if ndim == 3 else _compute_point2D
-    args = (kind, kn, kcoords, fft, nsamples, sample_thresh,
-            ndim, dim, shape, progress, exclude, compute_point)
+    compute_point = eval(f"_compute_point{ndim}D")
+    args = (kind, kn, kcoords, nsamples, sample_thresh, ndim,
+            dim, shape, progress, exclude, compute_point, *ffts)
     bispec, binorm, omega, counts = _compute_bispectrum(*args)
 
-    if np.issubdtype(data.dtype, np.floating):
+    if np.issubdtype(U[0].dtype, np.floating):
         bispec = bispec.real
 
     bicoh = np.abs(bispec) / binorm
@@ -210,8 +219,8 @@ def _fftn(image, overwrite_input=False, threads=-1, **kwargs):
 
 
 @nb.njit(parallel=True)
-def _compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
-                        ndim, dim, shape, progress, exclude, compute_point):
+def _compute_bispectrum(kind, kn, kcoords, nsamples, sample_thresh, ndim,
+                        dim, shape, progress, exclude, compute_point, *ffts):
     knyq = max(shape) // 2
     bispec = np.full((dim, dim), np.nan, dtype=np.complex128)
     binorm = np.full((dim, dim), np.nan, dtype=np.float64)
@@ -239,9 +248,10 @@ def _compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
             bispecbuf = np.zeros(count, dtype=np.complex128)
             binormbuf = np.zeros(count, dtype=np.float64)
             countbuf = np.zeros(count, dtype=np.int16)
-            compute_point(k1ind, k2ind, kcoords, fft,
-                          nk1, nk2, shape, samp, count,
-                          bispecbuf, binormbuf, countbuf)
+            compute_point(k1ind, k2ind, kcoords, nk1, nk2,
+                          shape, samp, count,
+                          bispecbuf, binormbuf, countbuf,
+                          *ffts)
             N = countbuf.sum()
             value = bispecbuf.sum()
             norm = binormbuf.sum()
@@ -256,8 +266,8 @@ def _compute_bispectrum(kind, kn, kcoords, fft, nsamples, sample_thresh,
 
 
 @nb.njit(parallel=True, cache=True)
-def _compute_point3D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
-                     samp, count, bispecbuf, binormbuf, countbuf):
+def _compute_point3D(k1ind, k2ind, kcoords, nk1, nk2, shape,
+                     samp, count, bispecbuf, binormbuf, countbuf, *ffts):
     kx, ky, kz = kcoords[0], kcoords[1], kcoords[2]
     Nx, Ny, Nz = shape[0], shape[1], shape[2]
     for idx in nb.prange(count):
@@ -267,15 +277,17 @@ def _compute_point3D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
         k3x, k3y, k3z = k1x+k2x, k1y+k2y, k1z+k2z
         if np.abs(k3x) > Nx//2 or np.abs(k3y) > Ny//2 or np.abs(k3z) > Nz//2:
             continue
-        sample = fft[k1x, k1y, k1z]*fft[k2x, k2y, k2z]*np.conj(fft[k3x, k3y, k3z])
+        sample = 0
+        for fft in ffts:
+            sample += fft[k1x, k1y, k1z]*fft[k2x, k2y, k2z]*np.conj(fft[k3x, k3y, k3z])
         bispecbuf[idx] = sample
         binormbuf[idx] = np.abs(sample)
         countbuf[idx] = 1
 
 
 @nb.njit(parallel=True, cache=True)
-def _compute_point2D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
-                     samp, count, bispecbuf, binormbuf, countbuf):
+def _compute_point2D(k1ind, k2ind, kcoords, nk1, nk2, shape,
+                     samp, count, bispecbuf, binormbuf, countbuf, *ffts):
     kx, ky = kcoords[0], kcoords[1]
     Nx, Ny = shape[0], shape[1]
     for idx in nb.prange(count):
@@ -285,7 +297,9 @@ def _compute_point2D(k1ind, k2ind, kcoords, fft, nk1, nk2, shape,
         k3x, k3y = k1x+k2x, k1y+k2y
         if np.abs(k3x) > Nx//2 or np.abs(k3y) > Ny//2:
             continue
-        sample = fft[k1x, k1y]*fft[k2x, k2y]*np.conj(fft[k3x, k3y])
+        sample = 0
+        for fft in ffts:
+            sample += fft[k1x, k1y]*fft[k2x, k2y]*np.conj(fft[k3x, k3y])
         bispecbuf[idx] = sample
         binormbuf[idx] = np.abs(sample)
         countbuf[idx] = 1
