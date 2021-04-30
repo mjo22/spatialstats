@@ -535,15 +535,13 @@ __global__ void computePointVec3D(long* k1ind, long* k2ind,
         long idx3 = (q3x*Nz + q3y)*Ny + q3z;
 
         // Sample correlation function
-        complex<double> sample;
-        double mod;
-        sample = fftx[idx1] * fftx[idx2] * conj(fftx[idx3]);
-        sample += ffty[idx1] * ffty[idx2] * conj(ffty[idx3]);
-        sample += fftz[idx1] * fftz[idx2] * conj(fftz[idx3]);
-        mod = abs(sample);
+        complex<double> sx, sy, sz;
+        sx = fftx[idx1] * fftx[idx2] * conj(fftx[idx3]);
+        sy = ffty[idx1] * ffty[idx2] * conj(ffty[idx3]);
+        sz = fftz[idx1] * fftz[idx2] * conj(fftz[idx3]);
 
-        bispecbuf[idx] = sample;
-        binormbuf[idx] = mod;
+        bispecbuf[idx] = sx + sy + sz;
+        binormbuf[idx] = abs(sx) + abs(sy) + abs(sz);
         countbuf[idx] = 1;
     }
 }
@@ -593,14 +591,12 @@ __global__ void computePointVec2D(const long* k1ind, const long* k2ind,
         long idx3 = (q3x*Ny + q3y);
 
         // Sample correlation function
-        complex<double> sample;
-        double mod;
-        sample = fftx[idx1] * fftx[idx2] * conj(fftx[idx3]);
-        sample += ffty[idx1] * ffty[idx2] * conj(ffty[idx3]);
-        mod = abs(sample);
+        complex<double> sx, sy;
+        sx = fftx[idx1] * fftx[idx2] * conj(fftx[idx3]);
+        sy = ffty[idx1] * ffty[idx2] * conj(ffty[idx3]);
 
-        bispecbuf[idx] = sample;
-        binormbuf[idx] = mod;
+        bispecbuf[idx] = sx + sy;
+        binormbuf[idx] = abs(sx) + abs(sy);
         countbuf[idx] = 1;
     }
 }
@@ -765,15 +761,13 @@ __global__ void computePointVec3Df(const long* k1ind, const long* k2ind,
         long idx3 = (q3x*Nz + q3y)*Ny + q3z;
 
         // Sample correlation function
-        complex<float> sample;
-        float mod;
-        sample = fftx[idx1] * fftx[idx2] * conj(fftx[idx3]);
-        sample += ffty[idx1] * ffty[idx2] * conj(ffty[idx3]);
-        sample += fftz[idx1] * fftz[idx2] * conj(fftz[idx3]);
-        mod = abs(sample);
+        complex<float> sx, sy, sz;
+        sx = fftx[idx1] * fftx[idx2] * conj(fftx[idx3]);
+        sy = ffty[idx1] * ffty[idx2] * conj(ffty[idx3]);
+        sz = fftz[idx1] * fftz[idx2] * conj(fftz[idx3]);
 
-        bispecbuf[idx] = sample;
-        binormbuf[idx] = mod;
+        bispecbuf[idx] = sx + sy + sz;
+        binormbuf[idx] = abs(sx) + abs(sy) + abs(sz);
         countbuf[idx] = 1;
     }
 }
@@ -822,14 +816,12 @@ __global__ void computePointVec2Df(const long* k1ind, const long* k2ind,
         long idx3 = (q3x*Ny + q3y);
 
         // Sample correlation function
-        complex<float> sample;
-        float mod;
-        sample = fftx[idx1] * fftx[idx2] * conj(fftx[idx3]);
-        sample += ffty[idx1] * ffty[idx2] * conj(ffty[idx3]);
-        mod = abs(sample);
+        complex<float> sx, sy;
+        sx = fftx[idx1] * fftx[idx2] * conj(fftx[idx3]);
+        sy = ffty[idx1] * ffty[idx2] * conj(ffty[idx3]);
 
-        bispecbuf[idx] = sample;
-        binormbuf[idx] = mod;
+        bispecbuf[idx] = sx + sy;
+        binormbuf[idx] = abs(sx) + abs(sy);
         countbuf[idx] = 1;
     }
 }

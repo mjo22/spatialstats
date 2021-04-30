@@ -276,11 +276,13 @@ def _compute_point3D(k1ind, k2ind, kcoords, nk1, nk2, shape,
         k3x, k3y, k3z = k1x+k2x, k1y+k2y, k1z+k2z
         if np.abs(k3x) > Nx//2 or np.abs(k3y) > Ny//2 or np.abs(k3z) > Nz//2:
             continue
-        sample = 0
+        sample, norm = 0, 0
         for fft in ffts:
-            sample += fft[k1x, k1y, k1z]*fft[k2x, k2y, k2z]*np.conj(fft[k3x, k3y, k3z])
+            temp = fft[k1x, k1y, k1z]*fft[k2x, k2y, k2z]*np.conj(fft[k3x, k3y, k3z])
+            sample += temp
+            norm += np.abs(temp)
         bispecbuf[idx] = sample
-        binormbuf[idx] = np.abs(sample)
+        binormbuf[idx] = norm
         countbuf[idx] = 1
 
 
@@ -296,11 +298,13 @@ def _compute_point2D(k1ind, k2ind, kcoords, nk1, nk2, shape,
         k3x, k3y = k1x+k2x, k1y+k2y
         if np.abs(k3x) > Nx//2 or np.abs(k3y) > Ny//2:
             continue
-        sample = 0
+        sample, norm = 0, 0
         for fft in ffts:
-            sample += fft[k1x, k1y]*fft[k2x, k2y]*np.conj(fft[k3x, k3y])
+            temp = fft[k1x, k1y]*fft[k2x, k2y]*np.conj(fft[k3x, k3y])
+            sample += temp
+            norm += np.abs(temp)
         bispecbuf[idx] = sample
-        binormbuf[idx] = np.abs(sample)
+        binormbuf[idx] = norm
         countbuf[idx] = 1
 
 
@@ -343,7 +347,7 @@ if __name__ == '__main__':
     # Plot
     cmap = 'plasma'
     labels = [r"$B(k_1, k_2)$", "$b(k_1, k_2)$"]
-    data = [np.log10(np.abs(bispec)), bicoh]
+    data = [np.log10(np.abs(bispec)), np.log10(bicoh)]
     fig, axes = plt.subplots(ncols=2)
     for i in range(2):
         ax = axes[i]
