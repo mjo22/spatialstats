@@ -15,7 +15,7 @@ def radialavg(data, center=None, dphi=None,
               bounds=(0, 2*np.pi), portion=False,
               stdev=False, avg=True, weight=None):
     """
-    Average data over bins of radial contours.
+    Average data over bins of radial slices.
 
     Parameters
     ----------
@@ -23,31 +23,31 @@ def radialavg(data, center=None, dphi=None,
         Two-dimensional data array.
     center : `tuple`, shape `(2,)`, optional
         (x, y) coordinates of the point around which to compute average.
-        Default is the image's geometric center.
+        If ``None``, use the image geometric center.
     dphi : `float`, optional
         Angular division of bins on which to group angles when
         averaging.
     bounds : `tuple`, shape `(2,)`, optional
-        Anglular range of average. The default is ``(0, 2*np.pi)``.
+        Anglular range of average. By default, use ``(0, 2*np.pi)``.
     portion : `bool`, optional
         Choose whether to scale data according to position in bin.
         Good for small number of bins and a lot of data.
     stdev : `bool`, optional
         Choose whether to return error bars for each bin.
-        Only works for portion equal to False.
+        Only works for ``portion = False``.
     avg : `bool`, optional
         Choose whether to average data along radial contours
         or compute sum.
     weight : `np.ndarray`, optional
         Relative weighting of each pixel in data.
-        The default weighting is uniform.
+        If ``None``, use uniform weighting.
 
     Returns
     -------
     result : `np.ndarray`
         One-dimensional radial average.
     phin : `np.ndarray`
-        The bins of angles.
+        The angular bins.
     stdev : `np.ndarray`, optional
         Standard deviations from the average.
     """
@@ -146,31 +146,31 @@ def aziavg(data, center=None, rad=None,
         Two-dimensional data array.
     center : `tuple`, shape `(2,)`, optional
         (x, y) coordinates of the point around which to compute average.
-        Default is the image's geometric center.
+        If ``None``, use the image geometric center.
     rad : `np.ndarray` or `int`, optional
         Array of bins to use in average or maximum radius.
-        of average.
-        The default is half of the minimum dimension of the data.
+        of average. If ``None``, use half of the minimum dimension
+        of the data.
     portion : `bool`, optional
         Choose whether to portion data by position in bin.
         Good for small number of bins compared to dimension
         of data.
     stdev : `bool`, optional
         Choose whether to return error bars for each bin.
-        Only works for portion equal to False.
+        Only works for ``portion = False``.
     avg : `bool`, optional
         Choose whether to average data along azimuthal contours
         or to compute sum.
     weight : `np.ndarray`, optional
         Relative weighting of each pixel in data.
-        The default weighting is uniform.
+        If ``None``, use uniform weighting.
 
     Returns
     -------
     result : `np.ndarray`
         One-dimensional azimuthal average.
     rn : `np.ndarray`
-        Radial bins of average.
+        Radial bins.
     stdev : `np.ndarray`, optional
         Standard deviations from the average.
     '''
@@ -251,29 +251,29 @@ def shellavg(data, center=None, rad=None,
         Three-dimensional data array.
     center : `tuple`, shape `(3,)`, optional
         (x, y, z) coordinates of the point around which to compute average.
-        Default is the image's geometric center.
+        If ``None``, use the image geometric center.
     rad : `np.ndarray` or `int`, optional
         Array of bins to use in average or
         maximum radius of average.
-        Default: half of the minimum dimension of the data.
+        If ``None``, use half of the minimum dimension of the data.
     portion : `bool`, optional
         Choose whether to scale data according to position in bin.
         Good for small number of bins and a lot of data.
     stdev : `bool`, optional
         Choose whether to return error bars for each bin.
-        Only works for portion equal to False.
+        Only works for ``portion = False``.
     avg : `bool`, optional
         Choose whether to average data along shells or compute sum.
     weight : `np.ndarray`, optional
         Relative weighting of each pixel in data.
-        The default weighting is uniform.
+        If ``None``, use uniform weighting.
 
     Returns
     -------
     result : `np.ndarray`
         One-dimensional angular average.
     rn : `np.ndarray`
-        Radial bins of the average.
+        Radial bins.
     stdev : `np.ndarray`, optional
         Standard deviations from the average.
     """
