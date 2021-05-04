@@ -1,6 +1,6 @@
 """
-Routines to calculate the radial distribution function g(r)
-and isotropic structure factor S(q).
+Routines to calculate the radial distribution function :math:`g(r)`
+and isotropic structure factor :math:`S(q)`.
 
 See https://en.wikipedia.org/wiki/Radial_distribution_function
 to learn more.
@@ -19,41 +19,51 @@ from scipy.special import jv
 from time import time
 
 
-def structure_factor(gr, r, N, boxsize,
-                     qmin=None, qmax=None, dq=None, **kwargs):
+def structure_factor(gr, r, N, boxsize, q=None, **kwargs):
     """
-    Calculate the isotropic structure factor S(q) from
-    the radial distribution function g(r) of a set of particles.
+    Calculate the isotropic structure factor :math:`S(q)` from
+    the radial distribution function :math:`g(r)` of a set of :math:`N` 
+    particle positions in a 2D or 3D volume :math:`V`.
+
+    The structure factor in 3D is computed as
+
+    .. math::
+
+        S(q) = 1 + 4\\pi \\rho \\frac{1}{q} \int dr \ r \ \\textrm{sin}(qr) [g(r) - 1]
+
+    and in 2D
+
+    .. math::
+
+        S(q) = 1 + 2\\pi \\rho \int dr \ r \ J_{0}(qr) [g(r) - 1],
+
+    where :math:`\\rho = N/V` and :math:`J_{0}` is the 0th bessel function of the first kind.
 
     Parameters
     ----------
     gr : `np.ndarray`
-        The radial distribution function outputted
-        from `spatialstats.points.point_cloud.rdf`.
+        The radial distribution function :math:`g(r)`
+        from ``spatialstats.points.point_cloud.rdf``.
     r : `np.ndarray`
-        The domain of the radial distribution function
-        outputted from `spatialstats.points.point_cloud.rdf`.
+        The domain of :math:`g(r)`
+        from ``spatialstats.points.point_cloud.rdf``.
     N : `int`
-        The number of particles.
+        The number of particles :math:`N`.
     boxsize : `list` of `float`
         The rectangular domain over which
         to apply periodic boundary conditions.
-        See `scipy.spatial.cKDTree` documentation.
-    qmin : `float`, optional
-        Minimum wavenumber for S(q). Default is ``dq``.
-    qmax : `float`, optional
-        Maximum wavenumber for S(q). Default is ``200*dq``
-    dq : `float`, optional
-        Wavenumber step size. Default is ``2*np.pi/L``, where
-        ``L = max(boxsize)``.
+        See ``scipy.spatial.cKDTree``.
+    q : `np.ndarray`, optional
+        Dimensional wavenumber bins :math:`q`.
+        If ``None``, ``q = np.arange(dq, 200*dq, dq)``
+        with ``dq = 2*np.pi / max(boxsize)``.
 
     Returns
     -------
     Sq : `np.ndarray`
-        The static structure factor.
+        The structure factor :math:`S(q)`.
     q : `np.ndarray`
-        Dimensional wavenumbers discretized by ``2*np.pi/L``, where
-        ``L = max(boxsize)``.
+        Wavenumber bins :math:`q`.
     """
     ndim = len(boxsize)
 
@@ -61,10 +71,9 @@ def structure_factor(gr, r, N, boxsize,
         raise ValueError("Dimension of space must be 2 or 3")
 
     # Generate wavenumbers
-    dq = (2*np.pi / max(boxsize)) if dq is None else dq
-    qmin = dq if qmin is None else qmin
-    qmax = 200*dq if qmax is None else qmax
-    q = np.arange(qmin, qmax+dq, dq)
+    if q is None:
+        dq = (2*np.pi / max(boxsize))
+        q = np.arange(dq, 200*dq, dq)
 
     def S(q):
         '''Integrand for isotropic structure factor'''
@@ -87,39 +96,36 @@ def structure_factor(gr, r, N, boxsize,
 
 def rdf(points, boxsize, rmin=None, rmax=None, npts=100, bench=False):
     """
-    Calculate the radial distribution function g(r)
-    for a group of particles in 2D or 3D.
-
-    Works for periodic boundary conditions on rectangular
-    domains.
+    Calculate the radial distribution function :math:`g(r)`
+    for a set of :math:`N` particle positions in a 2D or 3D periodic box.
 
     Parameters
     ---------
     points : `np.ndarray`, shape `(N, ndim)`
-        Particle locations, where ndim is number
-        of dimensions and N is number of particles.
+        Particle positions in ``ndim`` dimensions
+        and ``N`` particles. Passed to
+        ``scipy.spatial.cKDTree``.
     boxsize : `list` of `float`
         The rectangular domain over which
         to apply periodic boundary conditions.
-        See `scipy.spatial.cKDTree` documentation.
+        Passed to ``scipy.spatial.cKDTree``.
     rmin : `float`, optional
-        Minimum r value in g(r).
+        Minimum :math:`r` value in :math:`g(r)`.
     rmax : `float`, optional
         Cutoff radius for KDTree search and
-        maximum r value in g(r). Default is
-        maximum distance between any pair of
+        maximum :math:`r` value in :math:`g(r)`.
+        Default is maximum distance between any pair of
         particles.
     npts : `int`, optional
-        Number points between [`rmin`, `rmax`] in
-        g(r).
+        Number points in domain :math:`r`.
     bench : `bool`, optional
         Print message for time of calculation.
     Returns
     -------
     gr : `np.ndarray`
-        Radial distribution function g(r).
+        Radial distribution function :math:`g(r)`.
     r : `np.ndarray`
-        Radius r.
+        Radius :math:`r`.
     """
     N, ndim = points.shape
     rmax = min(boxsize)/2 if rmax is None else rmax

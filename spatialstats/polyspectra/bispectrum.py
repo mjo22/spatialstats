@@ -1,5 +1,5 @@
 """
-Bispectrum CPU implementation.
+Bispectrum CPU implementation using Numba parallelization.
 
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 
@@ -10,73 +10,127 @@ import numba as nb
 from time import time
 
 
-def bispectrum(*U, kmin=None, kmax=None,
+def bispectrum(*U, kmin=None, kmax=None, theta=None,
                nsamples=None, sample_thresh=None,
-               exclude=False, mean_subtract=False,
-               compute_fft=True, full=False,
+               exclude_upper=False, mean_subtract=False,
+               compute_fft=True, diagnostics=False,
                use_pyfftw=False,
                bench=False, progress=False, **kwargs):
     """
-    Compute the bispectrum of 2D or 3D real or complex valued
-    scalar or vector data.
+    Compute the bispectrum :math:`B(k_1, k_2, \\theta)` and
+    bicoherence index :math:`b(k_1, k_2, \\theta)` of a 2D or 3D
+    real or complex-valued scalar or vector field :math:`U` by
+    directly sampling triangles formed by wavevectors with sides
+    :math:`\mathbf{k_1}` and :math:`\mathbf{k_2}` and averaging
+    :math:`\hat{U}(\mathbf{k_1})\hat{U}(\mathbf{k_2})\hat{U}(\mathbf{k_1+k_2})`,
+    where :math:`\hat{U}` is the FFT of :math:`U`.
+
+    The implementation bins together
+    triangles formed by wavevectors with constant wavenumber side lengths
+    :math:`k_1` and :math:`k_2`, and
+    it can return bispectra either binned by or summed over triangle angle
+    :math:`\\theta`.
+
+    :math:`b(k_1, k_2, \\theta)` is computed as
+    :math:`|B(k_1, k_2, \\theta)|` divided by the sum over
+    :math:`|\hat{U}(\mathbf{k_1})\hat{U}(\mathbf{k_2})\hat{U}(\mathbf{k_1+k_2})|`.
+
+    .. note::
+        This implementation returns an average over triangles,
+        rather than a sum over triangles. One can recover the
+        sum over triangles by multiplying ``counts * B``
+        when ``nsamples = None``. Or, if ``theta = None``,
+        evaulate ``omega * B``.
+
+    .. note::
+        When considering the bispectrum as a function of triangle
+        angle, mesh points may be set to ``np.nan`` depending on
+        :math:`k_1, \ k_2`. For example, a triangle angle of zero
+        would yield a bispectrum equal to ``np.nan`` for all
+        :math:`k_1 + k_2 > k_{nyq}`, where :math:`k_{nyq}` is the
+        Nyquist frequency.
+        Computing a boolean mask with ``np.isnan`` locates nan values
+        in the result, and functions like ``np.nansum`` can be useful
+        for reductions.
+
+    .. note::
+        Summing ``np.nansum(B, axis=0)`` recovers the
+        bispectrum summed over triangle angles. To recover the
+        bicoherence summed over triangle angles, evaulate
+        ``np.nansum(B, axis=0) / np.nansum(np.abs(B)/b, axis=0)``
 
     Parameters
     ----------
     U : `np.ndarray`
         Real or complex vector or scalar data.
-        If vector data, pass arguments as U1, U2, ..., Un,
-        where Ui is the ith vector component.
-        Each Ui can be 2D or 3D and all must be the
-        same shape and dtype. The number of arrays passed
-        is the number of vector components.
+        If vector data, pass arguments as ``U1, U2, ..., Un``,
+        where ``Ui`` is the ith vector component.
+        Each ``Ui`` can be 2D or 3D, and all must have the
+        same ``Ui.shape`` and ``Ui.dtype``. The vector
+        bispectrum will be computed as the sum over bispectra
+        of each component.
     kmin : `int`, optional
         Minimum wavenumber in bispectrum calculation.
+        If ``None``, ``kmin = 1``.
     kmax : `int`, optional
         Maximum wavenumber in bispectrum calculation.
+        If ``None``, ``kmax = max(U.shape)//2``.
+    theta : `np.ndarray`, shape `(m,)`, optional
+        Angular bins :math:`\\theta` between triangles formed by
+        wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
+        If ``None``, sum over all triangle angles.
+        Otherwise, return a bispectrum for each angular bin.
     nsamples : `int`, `float` or `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of sample triangles or fraction of total
         possible triangles. This may be an array that
-        specifies for a given k1, k2. If None, calculate
-        the bispectrum exactly.
+        specifies for a given :math:`k_1, \ k_2`.
+        If ``None``, calculate the bispectrum exactly.
     sample_thresh : `int`, optional
         When the size of the sample space is greater than
         this number, start to use sampling instead of exact
-        calculation. If None, switch to exact calculation
-        when nsamples is less than the size of the sample space.
-    exclude : `bool`, optional
-        If True, exclude k1, k2 such that k1 + k2 is greater
-        than the Nyquist frequency. Excluded points will be
-        set to nan.
+        calculation. If ``None``, switch to exact calculation
+        when ``nsamples`` is less than the size of the sample space.
+    exclude_upper : `bool`, optional
+        If ``True``, exclude the upper triangular part of the
+        bispectrum. More specifically, points where
+        :math:`k_1 + k_2` is greater than the Nyquist frequency.
+        Excluded points will be set to ``np.nan``. This keyword
+        has no effect when ``theta is not None``.
     mean_subtract : `bool`, optional
-        Subtract mean off of input data to highlight
-        non-linearities in bicoherence.
+        Subtract mean from input data to highlight
+        off-axis components in bicoherence.
     compute_fft : `bool`, optional
-        If False, do not take the FFT of the input data.
-    full : `bool`, optional
-        Return the full output of calculation. Namely,
-        return the optional sampling diagnostics.
+        If ``False``, do not take the FFT of the input data.
+        FFTs should not be passed with the zero-frequency
+        component in the center.
+    diagnostics : `bool`, optional
+        Return the optional sampling diagnostics,
+        documented below.
     use_pyfftw : `bool`, optional
-        If True, use pyfftw to compute the FFTs.
+        If True, use ``pyfftw`` to compute the FFTs.
     bench : `bool`, optional
         If True, print calculation time.
     progress : `bool`, optional
         Print progress bar of calculation.
     kwargs
         Additional keyword arguments passed to
-        `np.fft.fftn` or `pyfftw.builders.fftn`.
+        ``np.fft.fftn`` or ``pyfftw.builders.fftn``.
 
     Returns
     -------
-    bispec : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`
-        Real or complex-valued bispectrum.
+    B : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
+        Real or complex-valued bispectrum :math:`B(k_1, k_2, \\theta)`.
         Will be real-valued if the input data is real.
-    bicoh : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`
-        Real-valued bicoherence.
-    kn : `np.ndarray`
-        Wavenumbers along axis of bispectrum.
+    b : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
+        Real-valued bicoherence index :math:`b(k_1, k_2, \\theta)`.
+    kn : `np.ndarray`, shape `(kmax-kmin+1,)`
+        Wavenumbers :math:`k_1` or :math:`k_2` along axis of bispectrum.
+    theta : `np.ndarray`, shape `(m,)`, optional
+        Angular bins between wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
     omega : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
-        Number of possible triangles in the sample space.
-    counts : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
+        Number of possible triangles in the sample space
+        for a particular :math:`k_1, \ k_2`.
+    counts : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
         Number of evaluations in the bispectrum sum.
     """
     shape, ndim = nb.typed.List(U[0].shape), U[0].ndim
@@ -153,22 +207,25 @@ def bispectrum(*U, kmin=None, kmax=None,
     # Run main loop
     compute_point = eval(f"_compute_point{ndim}D")
     args = (kind, kn, kcoords, nsamples, sample_thresh, ndim,
-            dim, shape, progress, exclude, compute_point, *ffts)
-    bispec, binorm, omega, counts = _compute_bispectrum(*args)
+            dim, shape, progress, exclude_upper, compute_point, *ffts)
+    B, norm, omega, counts = _compute_bispectrum(*args)
 
     if np.issubdtype(U[0].dtype, np.floating):
-        bispec = bispec.real
+        B = B.real
 
-    bicoh = np.abs(bispec) / binorm
-    bispec *= (omega / counts)
+    b = np.abs(B) / norm
+    B *= (omega / counts)
 
     if bench:
         print(f"Time: {time() - t0:.04f} s")
 
-    if not full:
-        return bispec, bicoh, kn
-    else:
-        return bispec, bicoh, kn, omega, counts
+    result = [B, b, kn]
+    if theta is not None:
+        result.append(theta)
+    if diagnostics:
+        result.extend([omega, counts])
+
+    return tuple(result)
 
 
 def _fftn(image, overwrite_input=False, threads=-1, **kwargs):
@@ -340,7 +397,7 @@ if __name__ == '__main__':
                                                   kmin=kmin, kmax=kmax,
                                                   progress=True,
                                                   mean_subtract=True,
-                                                  full=True, bench=True)
+                                                  diagnostics=True, bench=True)
     print(bispec.mean(), bicoh.mean())
     print(bicoh.max())
 

@@ -1,5 +1,5 @@
 """
-Powerspectrum GPU implementation.
+Power spectrum GPU implementation using CuPy acceleration.
 
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 
@@ -16,52 +16,63 @@ def powerspectrum(*U, average=False,
                   compute_fft=True, compute_sqr=True,
                   double=True, bench=False, **kwargs):
     """
-    Returns the radially averaged power spectrum
-    of 1, 2, or 3 dimensional scalar or
-    vector data using CuPy acceleration.
+    Returns the 1D radially averaged power spectrum :math:`P(k)`
+    of a 1D, 2D, or 3D real or complex-valued scalar or
+    vector field :math:`U`. This is computed as
+
+    .. math::
+
+        P(k) = \sum\limits_{|\mathbf{k}| = k} |\hat{U}(\mathbf{k})|^2,
+
+    where :math:`\hat{U}` is the FFT of :math:`U`, :math:`\mathbf{k}`
+    is a wavevector, and :math:`k` is a scalar wavenumber.
 
     Parameters
     ----------
-    U : `np.ndarray` or `cp.ndarray`
+    U : `np.ndarray`
         Real or complex vector or scalar data.
-        If vector data, pass arguments as U1, U2, ..., Un
-        where Ui is the ith vector component.
-        Each Ui can be 1D, 2D, or 3D and all must be the
-        same shape. The number of arrays passed is the number
-        of vector components.
+        If vector data, pass arguments as ``U1, U2, ..., Un``
+        where ``Ui`` is the ith vector component.
+        Each ``Ui`` can be 1D, 2D, or 3D, and all must have the
+        same ``Ui.shape`` and ``Ui.dtype``.
     average : `bool`, optional
-        If True, average over values in a given
-        bin and multiply by bin volume.
-        If False, compute the sum.
-    kmin : `float` or `int`, optional
-        Minimum k in powerspectrum bins. If None,
-        use 1.
-    kmax : `float` or `int`, optional
-        Maximum k in powerspectrum bins. If None,
-        use Nyquist frequency.
+        If ``True``, average over values in a given
+        bin and multiply by the bin volume.
+        If ``False``, compute the sum.
+    kmin : `int` or `float`, optional
+        Minimum wavenumber in power spectrum bins.
+        If ``None``, ``kmin = 1``.
+    kmax : `int` or `float`, optional
+        Maximum wavenumber in power spectrum bins.
+        If ``None``, ``kmax = max(U.shape)//2``.
     npts : `int`, optional
-        Number of modes between [`kmin`, `kmax`]
+        Number of modes between ``kmin`` and ``kmax``,
+        inclusive.
+        If ``None``, ``npts = kmax-kmin+1``.
     compute_fft : `bool`, optional
-        If False, do not take the FFT of the input data.
+        If ``False``, do not take the FFT of the input data.
+        FFTs should not be passed with the zero-frequency
+        component in the center.
     compute_sqr : `bool`, optional
-        If False, average the real part of the FFT.
-        If True, take the square as usual.
+        If ``False``, sum the real part of the FFT. This can be
+        useful for purely real FFTs, where the sign of the
+        FFT is useful information. If ``True``, take the square
+        as usual.
     double : `bool`, optional
-        If False, calculate FFTs in single precision.
+        If ``False``, calculate FFTs in single precision.
         Useful for saving memory.
     bench : `bool`, optional
         Print message for time of calculation.
     kwargs
         Additional keyword arguments passed to
-        `cupyx.scipy.fft.fftn` or `cupyx.scipy.fft.rfftn`.
+        ``cupyx.scipy.fft.fftn`` or ``cupyx.scipy.fft.rfftn``.
 
     Returns
     -------
-    spectrum : `np.ndarray`, shape `(kmax-kmin+1,)`
-        Radially averaged power spectrum.
+    spectrum : `np.ndarray`, shape `(npts,)`
+        Radially averaged power spectrum :math:`P(k)`.
     kn : `np.ndarray`, shape `(npts,)`
-        Corresponding bins for spectrum. Same
-        size as spectrum.
+        Corresponding bins for spectrum :math:`k`.
     """
     if bench:
         t0 = time()
