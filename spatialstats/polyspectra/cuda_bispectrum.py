@@ -79,10 +79,11 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
         Maximum wavenumber in bispectrum calculation.
         If ``None``, ``kmax = max(U.shape)//2``
     theta : `np.ndarray`, shape `(m,)`, optional
-        Angular bins :math:`\\theta` between triangles formed by
-        wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
-        If ``None``, sum over all triangle angles.
-        Otherwise, return a bispectrum for each angular bin.
+        Left edges of angular bins :math:`\\theta` between triangles
+        formed by wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
+        Values range between :math:`0` and :math:`\\pi`. If ``None``,
+        sum over all triangle angles. Otherwise, return a bispectrum
+        for each angular bin.
     nsamples : `int`, `float` or `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of sample triangles or fraction of total
         possible triangles. This may be an array that
@@ -132,7 +133,9 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
     kn : `np.ndarray`, shape `(kmax-kmin+1,)`
         Wavenumbers :math:`k_1` or :math:`k_2` along axis of bispectrum.
     theta : `np.ndarray`, shape `(m,)`, optional
-        Angular bins between wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
+        Left edges of angular bins :math:`\\theta`, ranging from
+        :math:`0` to :math:`\\pi`. This is the same as the input
+        ``theta`` and is returned for serialization convenience.
     omega : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of possible triangles in the sample space
         for a particular :math:`k_1, \ k_2`.
@@ -259,20 +262,40 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
             blocksize, compute_point, *ffts)
     B, norm, omega, counts = _compute_bispectrum(*args)
 
+    # If input data is real, so is bispectrum.
     if np.issubdtype(U[0].dtype, np.floating):
         B = B.real
 
+    # Set zero values to nan values for division
+    mask = counts == 0.
+    norm[mask] = cp.nan
+    counts[mask] = cp.nan
+
+    # Get bicoherence and average bispectrum
     b = np.abs(B) / norm
-    B *= (omega / counts)
+    B /= counts
+
+    # Convert counts back to integer type
+    if diagnostics:
+        counts = counts.astype(np.int64)
+        counts[mask] = 0
+
+    # Switch back angular bins to monotonic increasing in theta
+    if costheta.size > 1:
+        B[...] = cp.flip(B, axis=0)
+        b[...] = cp.flip(b, axis=0)
+        counts[...] = cp.flip(counts, axis=0)
+    else:
+        B, b, counts = B[0], b[0], counts[0]
 
     if bench:
         print(f"Time: {time() - t0:.04f} s")
 
-    result = [B, b, kn]
+    result = [B.get(), b.get(), kn]
     if theta is not None:
         result.append(theta)
     if diagnostics:
-        result.extend([omega, counts])
+        result.extend([omega, counts.get()])
 
     return tuple(result)
 
@@ -425,7 +448,7 @@ def _compute_bispectrum(kind, kn, kcoords, nsamples, sample_thresh,
         if progress:
             _printProgressBar(i, dim-1)
 
-    return bispec.get(), binorm.get(), omega, counts.get()
+    return bispec, binorm, omega, counts
 
 
 _module = cp.RawModule(code=r'''

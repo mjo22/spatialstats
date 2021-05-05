@@ -76,10 +76,11 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
         Maximum wavenumber in bispectrum calculation.
         If ``None``, ``kmax = max(U.shape)//2``.
     theta : `np.ndarray`, shape `(m,)`, optional
-        Angular bins :math:`\\theta` between triangles formed by
-        wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
-        If ``None``, sum over all triangle angles.
-        Otherwise, return a bispectrum for each angular bin.
+        Left edges of angular bins :math:`\\theta` between triangles
+        formed by wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
+        Values range between :math:`0` and :math:`\\pi`. If ``None``,
+        sum over all triangle angles. Otherwise, return a bispectrum
+        for each angular bin.
     nsamples : `int`, `float` or `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of sample triangles or fraction of total
         possible triangles. This may be an array that
@@ -126,7 +127,9 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
     kn : `np.ndarray`, shape `(kmax-kmin+1,)`
         Wavenumbers :math:`k_1` or :math:`k_2` along axis of bispectrum.
     theta : `np.ndarray`, shape `(m,)`, optional
-        Angular bins between wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
+        Left edges of angular bins :math:`\\theta`, ranging from
+        :math:`0` to :math:`\\pi`. This is the same as the input
+        ``theta`` and is returned for serialization convenience.
     omega : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of possible triangles in the sample space
         for a particular :math:`k_1, \ k_2`.
@@ -144,6 +147,12 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
     kmin = 1 if kmin is None else int(kmin)
     kn = np.arange(kmin, kmax+1, 1, dtype=int)
     dim = kn.size
+    # ...make costheta monotonically increase
+    costheta = np.array([0.]) if theta is None else np.flip(np.cos(theta))
+
+    # theta = 0 should be included
+    if theta is not None:
+        costheta[-1] += 1e-4
 
     if bench:
         t0 = time()
@@ -190,12 +199,14 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
             fft = U[i]
         ffts.append(fft)
 
+    # Sampling settings
     if sample_thresh is None:
         sample_thresh = np.iinfo(np.int64).max
     if nsamples is None:
         nsamples = np.iinfo(np.int64).max
         sample_thresh = np.iinfo(np.int64).max
 
+    # Sampling mask
     if np.issubdtype(type(nsamples), np.integer):
         nsamples = np.full((dim, dim), nsamples, dtype=np.int_)
     elif np.issubdtype(type(nsamples), np.floating):
@@ -206,15 +217,35 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
 
     # Run main loop
     compute_point = eval(f"_compute_point{ndim}D")
-    args = (kind, kn, kcoords, nsamples, sample_thresh, ndim,
+    args = (kind, kn, costheta, kcoords, nsamples, sample_thresh, ndim,
             dim, shape, progress, exclude_upper, compute_point, *ffts)
     B, norm, omega, counts = _compute_bispectrum(*args)
 
+    # If input data is real, so is the bispectrum.
     if np.issubdtype(U[0].dtype, np.floating):
         B = B.real
 
+    # Set zero values to nan values for division
+    mask = counts == 0.
+    norm[mask] = np.nan
+    counts[mask] = np.nan
+
+    # Get bicoherence and average bispectrum
     b = np.abs(B) / norm
-    B *= (omega / counts)
+    B /= counts
+
+    # Convert counts back to integer type
+    if diagnostics:
+        counts = counts.astype(np.int64)
+        counts[mask] = 0
+
+    # Switch back to theta monotonically increasing
+    if costheta.size > 1:
+        B[...] = np.flip(B, axis=0)
+        b[...] = np.flip(b, axis=0)
+        counts[...] = np.flip(counts, axis=0)
+    else:
+        B, b, counts = B[0], b[0], counts[0]
 
     if bench:
         print(f"Time: {time() - t0:.04f} s")
@@ -275,20 +306,21 @@ def _fftn(image, overwrite_input=False, threads=-1, **kwargs):
 
 
 @nb.njit(parallel=True)
-def _compute_bispectrum(kind, kn, kcoords, nsamples, sample_thresh, ndim,
+def _compute_bispectrum(kind, kn, costheta, kcoords, nsamples, sample_thresh, ndim,
                         dim, shape, progress, exclude, compute_point, *ffts):
     knyq = max(shape) // 2
-    bispec = np.full((dim, dim), np.nan, dtype=np.complex128)
-    binorm = np.full((dim, dim), np.nan, dtype=np.float64)
+    ntheta = costheta.size
+    bispec = np.full((ntheta, dim, dim), np.nan, dtype=np.complex128)
+    binorm = np.full((ntheta, dim, dim), np.nan, dtype=np.float64)
+    counts = np.full((ntheta, dim, dim), np.nan, dtype=np.float64)
     omega = np.zeros((dim, dim), dtype=np.int64)
-    counts = np.zeros((dim, dim), dtype=np.int64)
     for i in range(dim):
         k1 = kn[i]
         k1ind = kind[i]
         nk1 = k1ind.size
         for j in range(i+1):
             k2 = kn[j]
-            if exclude and k1 + k2 > knyq:
+            if ntheta == 1 and (exclude and k1 + k2 > knyq):
                 continue
             k2ind = kind[j]
             nk2 = k2ind.size
@@ -303,18 +335,20 @@ def _compute_bispectrum(kind, kn, kcoords, nsamples, sample_thresh, ndim,
                 count = nk1*nk2
             bispecbuf = np.zeros(count, dtype=np.complex128)
             binormbuf = np.zeros(count, dtype=np.float64)
-            countbuf = np.zeros(count, dtype=np.int16)
+            cthetabuf = np.zeros(count, dtype=np.float64) if ntheta > 1 \
+                else np.array([0.], dtype=np.float64)
+            countbuf = np.zeros(count, dtype=np.float64)
             compute_point(k1ind, k2ind, kcoords, nk1, nk2,
                           shape, samp, count,
-                          bispecbuf, binormbuf, countbuf,
+                          bispecbuf, binormbuf, cthetabuf, countbuf,
                           *ffts)
-            N = countbuf.sum()
-            value = bispecbuf.sum()
-            norm = binormbuf.sum()
-            bispec[i, j], bispec[j, i] = value, value
-            binorm[i, j], binorm[j, i] = norm, norm
+            if ntheta == 1:
+                _fill_sum(i, j, bispec, binorm, counts, bispecbuf, binormbuf, countbuf)
+            else:
+                binned = np.searchsorted(costheta, cthetabuf)
+                _fill_binned_sum(i, j, ntheta, binned, bispec, binorm, counts,
+                                 bispecbuf, binormbuf, countbuf)
             omega[i, j], omega[j, i] = nk1*nk2, nk1*nk2
-            counts[i, j], counts[j, i] = N, N
         if progress:
             with nb.objmode():
                 _printProgressBar(i, dim-1)
@@ -322,8 +356,31 @@ def _compute_bispectrum(kind, kn, kcoords, nsamples, sample_thresh, ndim,
 
 
 @nb.njit(parallel=True, cache=True)
+def _fill_sum(i, j, bispec, binorm, counts, bispecbuf, binormbuf, countbuf):
+    N = countbuf.sum()
+    norm = binormbuf.sum()
+    value = bispecbuf.sum()
+    bispec[0, i, j], bispec[0, j, i] = value, value
+    binorm[0, i, j], binorm[0, j, i] = norm, norm
+    counts[0, i, j], counts[0, j, i] = N, N
+
+
+@nb.njit(parallel=True, cache=True)
+def _fill_binned_sum(i, j, ntheta, binned, bispec, binorm, counts,
+                     bispecbuf, binormbuf, countbuf):
+    N = np.bincount(binned, weights=countbuf, minlength=ntheta)
+    norm = np.bincount(binned, weights=binormbuf, minlength=ntheta)
+    value = np.bincount(binned, weights=bispecbuf.real, minlength=ntheta) +\
+        1.j*np.bincount(binned, weights=bispecbuf.imag, minlength=ntheta)
+    bispec[:, i, j], bispec[:, j, i] = value, value
+    binorm[:, i, j], binorm[:, j, i] = norm, norm
+    counts[:, i, j], counts[:, j, i] = N, N
+
+
+@nb.njit(parallel=True, cache=True)
 def _compute_point3D(k1ind, k2ind, kcoords, nk1, nk2, shape,
-                     samp, count, bispecbuf, binormbuf, countbuf, *ffts):
+                     samp, count, bispecbuf, binormbuf,
+                     cthetabuf, countbuf, *ffts):
     kx, ky, kz = kcoords[0], kcoords[1], kcoords[2]
     Nx, Ny, Nz = shape[0], shape[1], shape[2]
     for idx in nb.prange(count):
@@ -341,11 +398,17 @@ def _compute_point3D(k1ind, k2ind, kcoords, nk1, nk2, shape,
         bispecbuf[idx] = sample
         binormbuf[idx] = norm
         countbuf[idx] = 1
+        if cthetabuf.size > 1:
+            k1dotk2 = (k1x*k2x+k1y*k2y+k1z*k2z)
+            k1norm, k2norm = np.sqrt(k1x**2+k1y**2+k1z**2), np.sqrt(k2x**2+k2y**2+k2z**2)
+            costheta = k1dotk2 / (k1norm*k2norm)
+            cthetabuf[idx] = costheta
 
 
 @nb.njit(parallel=True, cache=True)
 def _compute_point2D(k1ind, k2ind, kcoords, nk1, nk2, shape,
-                     samp, count, bispecbuf, binormbuf, countbuf, *ffts):
+                     samp, count, bispecbuf, binormbuf,
+                     cthetabuf, countbuf, *ffts):
     kx, ky = kcoords[0], kcoords[1]
     Nx, Ny = shape[0], shape[1]
     for idx in nb.prange(count):
@@ -363,6 +426,11 @@ def _compute_point2D(k1ind, k2ind, kcoords, nk1, nk2, shape,
         bispecbuf[idx] = sample
         binormbuf[idx] = norm
         countbuf[idx] = 1
+        if cthetabuf.size > 1:
+            k1dotk2 = (k1x*k2x+k1y*k2y)
+            k1norm, k2norm = np.sqrt(k1x**2+k1y**2), np.sqrt(k2x**2+k2y**2)
+            costheta = k1dotk2 / (k1norm*k2norm)
+            cthetabuf[idx] = costheta
 
 
 @nb.jit(forceobj=True, cache=True)
@@ -388,25 +456,28 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    N = 512
+    N = 200
     np.random.seed(1234)
     data = np.random.normal(size=N**2).reshape((N, N))+1
 
     kmin, kmax = 1, 100
-    bispec, bicoh, kn, omega, counts = bispectrum(data, nsamples=None,
-                                                  kmin=kmin, kmax=kmax,
-                                                  progress=True,
-                                                  mean_subtract=True,
-                                                  diagnostics=True, bench=True)
-    print(bispec.mean(), bicoh.mean())
-    print(bicoh.max())
+    theta = np.array([0, np.pi/4, np.pi/2, 3*np.pi/4])
+    bispec, bicoh, kn, theta, omega, counts = bispectrum(data, nsamples=None,
+                                                         kmin=kmin, kmax=kmax,
+                                                         theta=theta, progress=True,
+                                                         mean_subtract=True,
+                                                         diagnostics=True, bench=True)
+    print(np.nansum(bispec), np.nansum(bicoh))
+
+    tidx = 0
+    bispec, bicoh, counts = [x[tidx] for x in [bispec, bicoh, counts]]
 
     # Plot
     cmap = 'plasma'
-    labels = [r"$B(k_1, k_2)$", "$b(k_1, k_2)$"]
-    data = [np.log10(np.abs(bispec)), np.log10(bicoh)]
-    fig, axes = plt.subplots(ncols=2)
-    for i in range(2):
+    labels = [r"$B(k_1, k_2)$", "$b(k_1, k_2)$", "counts"]
+    data = [np.log10(np.abs(bispec)), np.log10(bicoh), np.log10(counts)]
+    fig, axes = plt.subplots(ncols=len(data))
+    for i in range(len(data)):
         ax = axes[i]
         im = ax.imshow(data[i], origin="lower",
                        interpolation="nearest",
