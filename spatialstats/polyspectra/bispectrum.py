@@ -237,7 +237,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
         counts[mask] = 0
 
     # Switch back to theta monotonically increasing
-    if costheta.size > 1:
+    if ntheta is not None:
         B[...] = np.flip(B, axis=0)
         b[...] = np.flip(b, axis=0)
         counts[...] = np.flip(counts, axis=0)

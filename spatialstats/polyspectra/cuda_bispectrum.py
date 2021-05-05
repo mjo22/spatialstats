@@ -285,7 +285,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
         counts[mask] = 0
 
     # Switch back angular bins to monotonic increasing in theta
-    if costheta.size > 1:
+    if ntheta is not None:
         B[...] = cp.flip(B, axis=0)
         b[...] = cp.flip(b, axis=0)
         counts[...] = cp.flip(counts, axis=0)
