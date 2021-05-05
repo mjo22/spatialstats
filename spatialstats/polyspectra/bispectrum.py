@@ -52,8 +52,8 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
         like ``np.nansum`` can be useful.
 
     .. note::
-        Summing ``np.nansum(B, axis=0)`` recovers the
-        bispectrum summed over triangle angles.
+        Computing ``np.nansum(B*counts, axis=0)/np.sum(counts, axis=0)``
+        recovers the bispectrum summed over triangle angles.
         To recover the corresponding bicoherence, evaulate
         ``np.abs(np.nansum(B, axis=0)) / np.nansum(np.abs(B)/b, axis=0)``
 
