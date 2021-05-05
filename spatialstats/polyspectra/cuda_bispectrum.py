@@ -47,7 +47,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
         angle, mesh points may be set to ``np.nan`` depending on
         :math:`k_1, \ k_2`. For example, :math:`\\theta = 0`
         would yield ``np.nan`` for all
-        :math:`k_1 + k_2 > \\sqrt{2} k_{nyq}`, where :math:`k_{nyq}`
+        :math:`k_1 + k_2 > \\sqrt{2} \ k_{nyq}`, where :math:`k_{nyq}`
         is the Nyquist frequency.
         Computing a boolean mask with ``np.isnan`` and reductions
         like ``np.nansum`` can be useful.
