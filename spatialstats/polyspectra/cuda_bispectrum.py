@@ -47,15 +47,15 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
         angle, mesh points may be set to ``np.nan`` depending on
         :math:`k_1, \ k_2`. For example, :math:`\\theta = 0`
         would yield ``np.nan`` for all
-        :math:`k_1 + k_2 > k_{nyq}`, where :math:`k_{nyq}` is the
-        Nyquist frequency.
+        :math:`k_1 + k_2 > \\sqrt{2} k_{nyq}`, where :math:`k_{nyq}`
+        is the Nyquist frequency.
         Computing a boolean mask with ``np.isnan`` and reductions
         like ``np.nansum`` can be useful.
 
     .. note::
         Summing ``np.nansum(B, axis=0)`` recovers the
-        bispectrum summed over triangle angles. To recover this
-        bicoherence, evaulate
+        bispectrum summed over triangle angles.
+        To recover the corresponding bicoherence, evaulate
         ``np.abs(np.nansum(B, axis=0)) / np.nansum(np.abs(B)/b, axis=0)``
 
     Parameters
@@ -92,10 +92,9 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
         calculation. If ``None``, switch to exact calculation
         when ``nsamples`` is less than the size of the sample space.
     exclude_upper : `bool`, optional
-        If ``True``, set the upper triangular part of the
-        bispectrum to ``np.nan``. More specifically, points where
-        :math:`k_1 + k_2` is greater than the Nyquist frequency.
-        This keyword has no effect when ``ntheta is not None``.
+        If ``True``, set points where :math:`k_1 + k_2 > k_{nyq}`
+        to ``np.nan``. This keyword only applies when summing
+        over angles, e.g. when ``ntheta is None``.
     mean_subtract : `bool`, optional
         Subtract mean from input data to highlight
         off-axis components in bicoherence.
