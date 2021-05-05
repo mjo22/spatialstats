@@ -23,7 +23,7 @@ def structure_factor(gr, r, N, boxsize, q=None, **kwargs):
     """
     Calculate the isotropic structure factor :math:`S(q)` from
     the radial distribution function :math:`g(r)` of a set of :math:`N` 
-    particle positions in a 2D or 3D volume :math:`V`.
+    particle positions in a 2D or 3D periodic box with volume :math:`V`.
 
     The structure factor in 3D is computed as
 

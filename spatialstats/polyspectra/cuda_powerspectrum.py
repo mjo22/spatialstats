@@ -17,8 +17,7 @@ def powerspectrum(*U, average=False,
                   double=True, bench=False, **kwargs):
     """
     Returns the 1D radially averaged power spectrum :math:`P(k)`
-    of a 1D, 2D, or 3D real or complex-valued scalar or
-    vector field :math:`U`. This is computed as
+    of a scalar or vector field :math:`U`. This is computed as
 
     .. math::
 
@@ -30,7 +29,7 @@ def powerspectrum(*U, average=False,
     Parameters
     ----------
     U : `np.ndarray`
-        Real or complex vector or scalar data.
+        Scalar or vector field.
         If vector data, pass arguments as ``U1, U2, ..., Un``
         where ``Ui`` is the ith vector component.
         Each ``Ui`` can be 1D, 2D, or 3D, and all must have the

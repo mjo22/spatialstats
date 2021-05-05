@@ -11,7 +11,7 @@ from cupyx.scipy import fft as cufft
 from time import time
 
 
-def bispectrum(*U, kmin=None, kmax=None, theta=None,
+def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
                nsamples=None, sample_thresh=None,
                exclude_upper=False, mean_subtract=False,
                compute_fft=True, diagnostics=False,
@@ -19,8 +19,8 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
                bench=False, progress=False, **kwargs):
     """
     Compute the bispectrum :math:`B(k_1, k_2, \\theta)` and
-    bicoherence index :math:`b(k_1, k_2, \\theta)` of a 2D or 3D
-    real or complex-valued scalar or vector field :math:`U` by
+    bicoherence index :math:`b(k_1, k_2, \\theta)` of a
+    scalar or vector field :math:`U` by
     directly sampling triangles formed by wavevectors with sides
     :math:`\mathbf{k_1}` and :math:`\mathbf{k_2}` and averaging
     :math:`\hat{U}(\mathbf{k_1})\hat{U}(\mathbf{k_2})\hat{U}(\mathbf{k_1+k_2})`,
@@ -31,44 +31,42 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
     :math:`k_1` and :math:`k_2`, and
     it can return bispectra either binned by or summed over triangle angle
     :math:`\\theta`.
-    
+
     :math:`b(k_1, k_2, \\theta)` is computed as
-    :math:`|B(k_1, k_2, \\theta)|` divided by the sum over
+    :math:`|B(k_1, k_2, \\theta)|` normalized by the sum of
     :math:`|\hat{U}(\mathbf{k_1})\hat{U}(\mathbf{k_2})\hat{U}(\mathbf{k_1+k_2})|`.
 
     .. note::
         This implementation returns an average over triangles,
         rather than a sum over triangles. One can recover the
-        sum over triangles by multiplying ``counts * B``
-        when ``nsamples = None``. Or, if ``theta = None``,
-        evaulate ``omega * B``.
+        sum by multiplying ``counts * B`` when ``nsamples = None``.
+        Or, if ``ntheta = None``, evaulate ``omega * B``.
 
     .. note::
         When considering the bispectrum as a function of triangle
         angle, mesh points may be set to ``np.nan`` depending on
-        :math:`k_1, \ k_2`. For example, a triangle angle of zero
-        would yield a bispectrum equal to ``np.nan`` for all
+        :math:`k_1, \ k_2`. For example, :math:`\\theta = 0`
+        would yield ``np.nan`` for all
         :math:`k_1 + k_2 > k_{nyq}`, where :math:`k_{nyq}` is the
         Nyquist frequency.
-        Computing a boolean mask with ``np.isnan`` locates nan values
-        in the result, and functions like ``np.nansum`` can be useful
-        for reductions.
+        Computing a boolean mask with ``np.isnan`` and reductions
+        like ``np.nansum`` can be useful.
 
     .. note::
         Summing ``np.nansum(B, axis=0)`` recovers the
-        bispectrum summed over triangle angles. To recover the
-        bicoherence summed over triangle angles, evaulate
-        ``np.nansum(B, axis=0) / np.nansum(np.abs(B)/b, axis=0)``
+        bispectrum summed over triangle angles. To recover this
+        bicoherence, evaulate
+        ``np.abs(np.nansum(B, axis=0)) / np.nansum(np.abs(B)/b, axis=0)``
 
     Parameters
     ----------
     U : `np.ndarray` or `cp.ndarray`
-        Real or complex vector or scalar data.
+        Scalar or vector field.
         If vector data, pass arguments as ``U1, U2`` or
         ``U1, U2, U3`` where ``Ui`` is the ith vector component.
         Each ``Ui`` should be 2D or 3D (respectively), and
         must have the same ``Ui.shape`` and ``Ui.dtype``.
-        If ``Ui`` are type ``cp.ndarray`` and complex valued, it will
+        If ``Ui`` are type ``cp.ndarray`` and complex-valued, it will
         by default be overwritten when taking FFTs to save memory.
         The vector bispectrum will be computed as the sum over bispectra
         of each component.
@@ -78,28 +76,26 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
     kmax : `int`, optional
         Maximum wavenumber in bispectrum calculation.
         If ``None``, ``kmax = max(U.shape)//2``
-    theta : `np.ndarray`, shape `(m,)`, optional
-        Left edges of angular bins :math:`\\theta` between triangles
+    ntheta : `int`, optional
+        Number of angular bins :math:`\\theta` between triangles
         formed by wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
-        Values range between :math:`0` and :math:`\\pi`. If ``None``,
-        sum over all triangle angles. Otherwise, return a bispectrum
-        for each angular bin.
+        If ``None``, sum over all triangle angles. Otherwise,
+        return a bispectrum for each angular bin.
     nsamples : `int`, `float` or `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of sample triangles or fraction of total
         possible triangles. This may be an array that
         specifies for a given :math:`k_1, \ k_2`.
-        If ``None``, calculate the bispectrum exactly.
+        If ``None``, calculate the exact sum.
     sample_thresh : `int`, optional
         When the size of the sample space is greater than
         this number, start to use sampling instead of exact
         calculation. If ``None``, switch to exact calculation
         when ``nsamples`` is less than the size of the sample space.
     exclude_upper : `bool`, optional
-        If ``True``, exclude the upper triangular part of the
-        bispectrum. More specifically, points where
+        If ``True``, set the upper triangular part of the
+        bispectrum to ``np.nan``. More specifically, points where
         :math:`k_1 + k_2` is greater than the Nyquist frequency.
-        Excluded points will be set to ``np.nan``. This keyword
-        has no effect when ``theta is not None``.
+        This keyword has no effect when ``ntheta is not None``.
     mean_subtract : `bool`, optional
         Subtract mean from input data to highlight
         off-axis components in bicoherence.
@@ -126,19 +122,19 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
     Returns
     -------
     B : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
-        Real or complex-valued bispectrum :math:`B(k_1, k_2, \\theta)`.
+        Bispectrum :math:`B(k_1, k_2, \\theta)`.
         Will be real-valued if the input data is real.
     b : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
-        Real-valued bicoherence index :math:`b(k_1, k_2, \\theta)`.
+        Bicoherence index :math:`b(k_1, k_2, \\theta)`.
     kn : `np.ndarray`, shape `(kmax-kmin+1,)`
         Wavenumbers :math:`k_1` or :math:`k_2` along axis of bispectrum.
     theta : `np.ndarray`, shape `(m,)`, optional
         Left edges of angular bins :math:`\\theta`, ranging from
-        :math:`0` to :math:`\\pi`. This is the same as the input
-        ``theta`` and is returned for serialization convenience.
+        :math:`[0, \ \\pi)`.
     omega : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of possible triangles in the sample space
-        for a particular :math:`k_1, \ k_2`.
+        for a particular :math:`k_1, \ k_2`, unrestricted by
+        the Nyquist frequency.
     counts : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
         Number of evaluations in the bispectrum sum.
     """
@@ -165,6 +161,13 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
     kmin = 1 if kmin is None else int(kmin)
     kn = np.arange(kmin, kmax+1, 1, dtype=int)
     dim = kn.size
+    theta = cp.arange(0, np.pi, np.pi/ntheta) if ntheta is not None else None
+    # ...make costheta monotonically increase
+    costheta = cp.flip(np.cos(theta)) if theta is not None else cp.array([1.])
+
+    # theta = 0 should be included
+    if theta is not None:
+        costheta[-1] += 1e-5
 
     if bench:
         t0 = time()
@@ -239,12 +242,14 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
     mempool.free_all_blocks()
     pinned_mempool.free_all_blocks()
 
+    # Sampling settings
     if sample_thresh is None:
         sample_thresh = np.iinfo(np.int64).max
     if nsamples is None:
         nsamples = np.iinfo(np.int64).max
         sample_thresh = np.iinfo(np.int64).max
 
+    # Sampling mask
     if np.issubdtype(type(nsamples), np.integer):
         nsamples = np.full((dim, dim), nsamples, dtype=np.int_)
     elif np.issubdtype(type(nsamples), np.floating):
@@ -257,7 +262,7 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
     f = "f" if not double else ""
     v = "Vec" if ncomp > 1 else ""
     compute_point = _module.get_function(f"computePoint{v}{ndim}D{f}")
-    args = (kind, kn, kcoords, nsamples, sample_thresh,
+    args = (kind, kn, costheta, kcoords, nsamples, sample_thresh,
             ndim, dim, shape, double, progress, exclude_upper,
             blocksize, compute_point, *ffts)
     B, norm, omega, counts = _compute_bispectrum(*args)
@@ -275,7 +280,7 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
     b = np.abs(B) / norm
     B /= counts
 
-    # Convert counts back to integer type
+    # Convert counts to integer type
     if diagnostics:
         counts = counts.astype(np.int64)
         counts[mask] = 0
@@ -293,7 +298,7 @@ def bispectrum(*U, kmin=None, kmax=None, theta=None,
 
     result = [B.get(), b.get(), kn]
     if theta is not None:
-        result.append(theta)
+        result.append(theta.get())
     if diagnostics:
         result.extend([omega, counts.get()])
 
@@ -308,14 +313,11 @@ def _cufftn(data, overwrite_input=True, **kwargs):
     Parameters
     ----------
     data : cupy.ndarray
-        Real or complex valued 2D or 3D image.
+        Real or complex-valued 2D or 3D image.
     overwrite_input : bool, optional
         Specify whether input data can be destroyed.
         This is useful if low on memory.
         See cupyx.scipy.fft.fftn for more.
-
-    **kwargs passes to cupyx.scipy.fft.fftn or
-    cupyx.scipy.fft.rfftn
 
     Returns
     -------
@@ -351,8 +353,6 @@ def _cufftn(data, overwrite_input=True, **kwargs):
 
 
 _sqr_add = cp.RawKernel(r'''
-#include <cupy/carray.cuh>
-
 extern "C" __global__
 
 void square_add(float* kr, float* ki, int size) {
@@ -371,8 +371,6 @@ void square_add(float* kr, float* ki, int size) {
 
 
 _sqrt = cp.RawKernel(r'''
-#include <cupy/carray.cuh>
-
 extern "C" __global__
 
 void square_root(float* kr, int size) {
@@ -390,28 +388,29 @@ void square_root(float* kr, int size) {
 ''', 'square_root')
 
 
-def _compute_bispectrum(kind, kn, kcoords, nsamples, sample_thresh,
+def _compute_bispectrum(kind, kn, costheta, kcoords, nsamples, sample_thresh,
                         ndim, dim, shape, double, progress,
                         exclude, blocksize, compute_point, *ffts):
     knyq = max(shape) // 2
     shape = [cp.int16(Ni) for Ni in shape]
+    ntheta = costheta.size
     if double:
         float, complex = cp.float64, cp.complex128
     else:
         float, complex = cp.float32, cp.complex64
     mempool = cp.get_default_memory_pool()
     pinned_mempool = cp.get_default_pinned_memory_pool()
-    bispec = cp.full((dim, dim), cp.nan+1.j*cp.nan, dtype=complex)
-    binorm = cp.full((dim, dim), cp.nan, dtype=float)
+    bispec = cp.full((ntheta, dim, dim), cp.nan+1.j*cp.nan, dtype=complex)
+    binorm = cp.full((ntheta, dim, dim), cp.nan, dtype=float)
+    counts = cp.full((ntheta, dim, dim), cp.nan, dtype=float)
     omega = np.zeros((dim, dim), dtype=np.int64)
-    counts = cp.zeros((dim, dim), dtype=cp.int64)
     for i in range(dim):
         k1 = kn[i]
         k1ind = kind[i]
         nk1 = k1ind.size
         for j in range(i+1):
             k2 = kn[j]
-            if exclude and k1 + k2 > knyq:
+            if ntheta == 1 and (exclude and k1 + k2 > knyq):
                 continue
             k2ind = kind[j]
             nk2 = k2ind.size
@@ -429,19 +428,25 @@ def _compute_bispectrum(kind, kn, kcoords, nsamples, sample_thresh,
             bpg = (count + (tpb - 1)) // tpb
             bispecbuf = cp.zeros(count, dtype=complex)
             binormbuf = cp.zeros(count, dtype=float)
-            countbuf = cp.zeros(count, dtype=cp.int16)
+            cthetabuf = cp.zeros(count, dtype=np.float64) if ntheta > 1 \
+                else cp.array([0.], dtype=float)
+            countbuf = cp.zeros(count, dtype=float)
             compute_point((bpg,), (tpb,), (k1ind, k2ind, *kcoords,
+                                           cp.int32(ntheta),
                                            cp.int64(nk1), cp.int64(nk2),
                                            *shape, samp, cp.int64(count),
-                                           bispecbuf, binormbuf, countbuf,
+                                           bispecbuf, binormbuf,
+                                           cthetabuf, countbuf,
                                            *ffts))
-            N = countbuf.sum()
-            value = bispecbuf.sum()
-            norm = binormbuf.sum()
-            bispec[i, j], bispec[j, i] = value, value
-            binorm[i, j], binorm[j, i] = norm, norm
+            if ntheta == 1:
+                _fill_sum(i, j, bispec, binorm, counts,
+                          bispecbuf, binormbuf, countbuf)
+            else:
+                binned = cp.searchsorted(costheta, cthetabuf)
+                _fill_binned_sum(i, j, ntheta, binned,
+                                 bispec, binorm, counts,
+                                 bispecbuf, binormbuf, countbuf)
             omega[i, j], omega[j, i] = nk1*nk2, nk1*nk2
-            counts[i, j], counts[j, i] = N, N
             del bispecbuf, binormbuf, countbuf, samp
             mempool.free_all_blocks()
             pinned_mempool.free_all_blocks()
@@ -451,17 +456,38 @@ def _compute_bispectrum(kind, kn, kcoords, nsamples, sample_thresh,
     return bispec, binorm, omega, counts
 
 
+def _fill_sum(i, j, bispec, binorm, counts, bispecbuf, binormbuf, countbuf):
+    N = countbuf.sum()
+    norm = binormbuf.sum()
+    value = bispecbuf.sum()
+    bispec[0, i, j], bispec[0, j, i] = value, value
+    binorm[0, i, j], binorm[0, j, i] = norm, norm
+    counts[0, i, j], counts[0, j, i] = N, N
+
+
+def _fill_binned_sum(i, j, ntheta, binned, bispec, binorm, counts,
+                     bispecbuf, binormbuf, countbuf):
+    N = cp.bincount(binned, weights=countbuf, minlength=ntheta)
+    norm = cp.bincount(binned, weights=binormbuf, minlength=ntheta)
+    value = cp.bincount(binned, weights=bispecbuf.real, minlength=ntheta) +\
+        1.j*cp.bincount(binned, weights=bispecbuf.imag, minlength=ntheta)
+    bispec[:, i, j], bispec[:, j, i] = value, value
+    binorm[:, i, j], binorm[:, j, i] = norm, norm
+    counts[:, i, j], counts[:, j, i] = N, N
+
+
 _module = cp.RawModule(code=r'''
 # include <cupy/complex.cuh>
 
 extern "C" {
 __global__ void computePoint3D(long* k1ind, long* k2ind,
                                short* kx, short* ky, short* kz,
-                               long nk1, long nk2,
+                               int ntheta, long nk1, long nk2,
                                short Nx, short Ny, short Nz,
                                const long* samp, long count,
                                complex<double>* bispecbuf, double* binormbuf,
-                               short* countbuf, const complex<double>* fft) {
+                               double* cthetabuf, double* countbuf,
+                               const complex<double>* fft) {
 
     for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
          idx < count;
@@ -510,16 +536,30 @@ __global__ void computePoint3D(long* k1ind, long* k2ind,
         bispecbuf[idx] = sample;
         binormbuf[idx] = mod;
         countbuf[idx] = 1;
+
+        // Calculate angles
+        if (ntheta > 1) {
+            double k1dotk2, k1norm, k2norm, costheta;
+            double x1, y1, z1, x2, y2, z2;
+            x1 = double(k1x); y1 = double(k1y); z1 = double(k1z);
+            x2 = double(k2x); y2 = double(k2y); z2 = double(k2z);
+            k1dotk2 = x1*x2 + y1*y2 + z1*z2;
+            k1norm = sqrt(x1*x1 + y1*y1 + z1*z1);
+            k2norm = sqrt(x2*x2 + y2*y2 + z2*z2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
     }
 }
 
 
 __global__ void computePoint2D(const long* k1ind, const long* k2ind,
                                short* kx, short* ky,
-                               long nk1, long nk2,
+                               int ntheta, long nk1, long nk2,
                                short Nx, short Ny, const long* samp, long count,
                                complex<double>* bispecbuf, double* binormbuf,
-                               short* countbuf, const complex<double>* fft) {
+                               double* cthetabuf, double* countbuf,
+                               const complex<double>* fft) {
 
     for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
          idx < count;
@@ -565,17 +605,32 @@ __global__ void computePoint2D(const long* k1ind, const long* k2ind,
         bispecbuf[idx] = sample;
         binormbuf[idx] = mod;
         countbuf[idx] = 1;
+
+        // Calculate angles
+        if (ntheta > 1) {
+            double k1dotk2, k1norm, k2norm, costheta;
+            double x1, y1, x2, y2;
+            x1 = double(k1x); y1 = double(k1y);
+            x2 = double(k2x); y2 = double(k2y);
+            k1dotk2 = x1*x2 + y1*y2;
+            k1norm = sqrt(x1*x1 + y1*y1);
+            k2norm = sqrt(x2*x2 + y2*y2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
     }
 }
 
 __global__ void computePointVec3D(long* k1ind, long* k2ind,
                                   short* kx, short* ky, short* kz,
-                                  long nk1, long nk2,
+                                  int ntheta, long nk1, long nk2,
                                   short Nx, short Ny, short Nz,
                                   const long* samp, long count,
                                   complex<double>* bispecbuf, double* binormbuf,
-                                  short* countbuf, const complex<double>* fftx,
-                                  const complex<double>* ffty, const complex<double>* fftz) {
+                                  double* cthetabuf, double* countbuf,
+                                  const complex<double>* fftx,
+                                  const complex<double>* ffty,
+                                  const complex<double>* fftz) {
 
     for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
          idx < count;
@@ -624,16 +679,30 @@ __global__ void computePointVec3D(long* k1ind, long* k2ind,
         bispecbuf[idx] = sx + sy + sz;
         binormbuf[idx] = abs(sx) + abs(sy) + abs(sz);
         countbuf[idx] = 1;
+
+        // Calculate angles
+        if (ntheta > 1) {
+            double k1dotk2, k1norm, k2norm, costheta;
+            double x1, y1, z1, x2, y2, z2;
+            x1 = double(k1x); y1 = double(k1y); z1 = double(k1z);
+            x2 = double(k2x); y2 = double(k2y); z2 = double(k2z);
+            k1dotk2 = x1*x2 + y1*y2 + z1*z2;
+            k1norm = sqrt(x1*x1 + y1*y1 + z1*z1);
+            k2norm = sqrt(x2*x2 + y2*y2 + z2*z2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
     }
 }
 
 
 __global__ void computePointVec2D(const long* k1ind, const long* k2ind,
                                   short* kx, short* ky,
-                                  long nk1, long nk2,
+                                  int ntheta, long nk1, long nk2,
                                   short Nx, short Ny, const long* samp, long count,
                                   complex<double>* bispecbuf, double* binormbuf,
-                                  short* countbuf, const complex<double>* fftx,
+                                  double* cthetabuf, double* countbuf,
+                                  const complex<double>* fftx,
                                   const complex<double>* ffty) {
 
     for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -679,16 +748,30 @@ __global__ void computePointVec2D(const long* k1ind, const long* k2ind,
         bispecbuf[idx] = sx + sy;
         binormbuf[idx] = abs(sx) + abs(sy);
         countbuf[idx] = 1;
+
+        // Calculate angles
+        if (ntheta > 1) {
+            double k1dotk2, k1norm, k2norm, costheta;
+            double x1, y1, x2, y2;
+            x1 = double(k1x); y1 = double(k1y);
+            x2 = double(k2x); y2 = double(k2y);
+            k1dotk2 = x1*x2 + y1*y2;
+            k1norm = sqrt(x1*x1 + y1*y1);
+            k2norm = sqrt(x2*x2 + y2*y2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
     }
 }
 
 __global__ void computePoint3Df(const long* k1ind, const long* k2ind,
                                 const short* kx, const short* ky, const short* kz,
-                                long nk1, long nk2,
+                                int ntheta, long nk1, long nk2,
                                 short Nx, short Ny, short Nz,
                                 const long* samp, long count,
                                 complex<float>* bispecbuf, float* binormbuf,
-                                short* countbuf, const complex<float>* fft) {
+                                float* cthetabuf, float* countbuf,
+                                const complex<float>* fft) {
 
     for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
          idx < count;
@@ -737,15 +820,29 @@ __global__ void computePoint3Df(const long* k1ind, const long* k2ind,
         bispecbuf[idx] = sample;
         binormbuf[idx] = mod;
         countbuf[idx] = 1;
+
+        // Calculate angles
+        if (ntheta > 1) {
+            float k1dotk2, k1norm, k2norm, costheta;
+            float x1, y1, z1, x2, y2, z2;
+            x1 = float(k1x); y1 = float(k1y); z1 = float(k1z);
+            x2 = float(k2x); y2 = float(k2y); z2 = float(k2z);
+            k1dotk2 = x1*x2 + y1*y2 + z1*z2;
+            k1norm = sqrt(x1*x1 + y1*y1 + z1*z1);
+            k2norm = sqrt(x2*x2 + y2*y2 + z2*z2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
     }
 }
 
 __global__ void computePoint2Df(const long* k1ind, const long* k2ind,
                                 const short* kx, const short* ky,
-                                long nk1, long nk2,
+                                int ntheta, long nk1, long nk2,
                                 short Nx, short Ny, const long* samp, long count,
                                 complex<float>* bispecbuf, float* binormbuf,
-                                short* countbuf, const complex<float>* fft) {
+                                float* cthetabuf, float* countbuf,
+                                const complex<float>* fft) {
 
     for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
          idx < count;
@@ -756,7 +853,7 @@ __global__ void computePoint2Df(const long* k1ind, const long* k2ind,
         n = k1ind[samp[idx] % nk1]; m = k2ind[samp[idx] / nk1];
 
         short k1x, k1y, k2x, k2y, k3x, k3y;
-    
+
         k1x = kx[n]; k1y = ky[n];
         k2x = kx[m]; k2y = ky[m];
         k3x = k1x+k2x; k3y = k1y+k2y;
@@ -791,17 +888,32 @@ __global__ void computePoint2Df(const long* k1ind, const long* k2ind,
         bispecbuf[idx] = sample;
         binormbuf[idx] = mod;
         countbuf[idx] = 1;
+
+        // Calculate angles
+        if (ntheta > 1) {
+            float k1dotk2, k1norm, k2norm, costheta;
+            float x1, y1, x2, y2;
+            x1 = float(k1x); y1 = float(k1y);
+            x2 = float(k2x); y2 = float(k2y);
+            k1dotk2 = x1*x2 + y1*y2;
+            k1norm = sqrt(x1*x1 + y1*y1);
+            k2norm = sqrt(x2*x2 + y2*y2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
     }
 }
 
 __global__ void computePointVec3Df(const long* k1ind, const long* k2ind,
                                    const short* kx, const short* ky, const short* kz,
-                                   long nk1, long nk2,
+                                   int ntheta, long nk1, long nk2,
                                    short Nx, short Ny, short Nz,
                                    const long* samp, long count,
                                    complex<float>* bispecbuf, float* binormbuf,
-                                   short* countbuf, const complex<float>* fftx,
-                                   const complex<float>* ffty, const complex<float>* fftz) {
+                                   float* cthetabuf, float* countbuf,
+                                   const complex<float>* fftx,
+                                   const complex<float>* ffty,
+                                   const complex<float>* fftz) {
 
     for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
          idx < count;
@@ -850,15 +962,29 @@ __global__ void computePointVec3Df(const long* k1ind, const long* k2ind,
         bispecbuf[idx] = sx + sy + sz;
         binormbuf[idx] = abs(sx) + abs(sy) + abs(sz);
         countbuf[idx] = 1;
+
+        // Calculate angles
+        if (ntheta > 1) {
+            float k1dotk2, k1norm, k2norm, costheta;
+            float x1, y1, z1, x2, y2, z2;
+            x1 = float(k1x); y1 = float(k1y); z1 = float(k1z);
+            x2 = float(k2x); y2 = float(k2y); z2 = float(k2z);
+            k1dotk2 = x1*x2 + y1*y2 + z1*z2;
+            k1norm = sqrt(x1*x1 + y1*y1 + z1*z1);
+            k2norm = sqrt(x2*x2 + y2*y2 + z2*z2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
     }
 }
 
 __global__ void computePointVec2Df(const long* k1ind, const long* k2ind,
                                    const short* kx, const short* ky,
-                                   long nk1, long nk2,
+                                   int ntheta, long nk1, long nk2,
                                    short Nx, short Ny, const long* samp, long count,
                                    complex<float>* bispecbuf, float* binormbuf,
-                                   short* countbuf, const complex<float>* fftx,
+                                   float* cthetabuf, float* countbuf,
+                                   const complex<float>* fftx,
                                    const complex<float>* ffty) {
 
     for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -904,6 +1030,19 @@ __global__ void computePointVec2Df(const long* k1ind, const long* k2ind,
         bispecbuf[idx] = sx + sy;
         binormbuf[idx] = abs(sx) + abs(sy);
         countbuf[idx] = 1;
+
+        // Calculate angles
+        if (ntheta > 1) {
+            float k1dotk2, k1norm, k2norm, costheta;
+            float x1, y1, x2, y2;
+            x1 = float(k1x); y1 = float(k1y);
+            x2 = float(k2x); y2 = float(k2y);
+            k1dotk2 = x1*x2 + y1*y2;
+            k1norm = sqrt(x1*x1 + y1*y1);
+            k2norm = sqrt(x2*x2 + y2*y2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
     }
 }
 }''')
@@ -931,25 +1070,27 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    N = 512
+    N = 200
     np.random.seed(1234)
     data = np.random.normal(size=N**2).reshape((N, N))+1
 
     kmin, kmax = 1, 100
-    bispec, bicoh, kn, omega, counts = bispectrum(data, nsamples=None,
-                                                  kmin=kmin, kmax=kmax,
-                                                  progress=True, double=True,
-                                                  mean_subtract=True,
-                                                  diagnostics=True, bench=True)
-    print(bispec.mean(), bicoh.mean())
-    print(bicoh.max())
+    bispec, bicoh, kn, theta, omega, counts = bispectrum(data, nsamples=None,
+                                                         kmin=kmin, kmax=kmax,
+                                                         ntheta=2, progress=True,
+                                                         mean_subtract=True,
+                                                         diagnostics=True, bench=True)
+    print(np.nansum(bispec), np.nansum(bicoh))
+
+    tidx = 1
+    bispec, bicoh, counts = [x[tidx] for x in [bispec, bicoh, counts]]
 
     # Plot
     cmap = 'plasma'
-    labels = [r"$B(k_1, k_2)$", "$b(k_1, k_2)$"]
-    data = [np.log10(np.abs(bispec)), bicoh]
-    fig, axes = plt.subplots(ncols=2)
-    for i in range(2):
+    labels = [r"$B(k_1, k_2)$", "$b(k_1, k_2)$", "counts"]
+    data = [np.log10(np.abs(bispec)), np.log10(bicoh), np.log10(counts)]
+    fig, axes = plt.subplots(ncols=len(data))
+    for i in range(len(data)):
         ax = axes[i]
         im = ax.imshow(data[i], origin="lower",
                        interpolation="nearest",
