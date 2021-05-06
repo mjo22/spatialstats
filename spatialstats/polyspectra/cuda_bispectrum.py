@@ -122,7 +122,6 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     -------
     B : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
         Bispectrum :math:`B(k_1, k_2, \\theta)`.
-        Will be real-valued if the input data is real.
     b : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
         Bicoherence index :math:`b(k_1, k_2, \\theta)`.
     kn : `np.ndarray`, shape `(kmax-kmin+1,)`
@@ -154,6 +153,17 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     if (ndim == 2 and ncomp not in [1, 2]) \
        or (ndim == 3 and ncomp not in [1, 3]):
         raise ValueError(f"{ncomp} components not valid for {ndim}-D data.")
+
+    # Determine if input is real or complex
+    real = False
+    if not compute_fft:
+        # ...unideal way to check if FFT satisfies U(-k) = U*(k)
+        if ndim == 2 and np.allclose(U[0][1, 1], U[0][-1, -1].conj()):
+            real = True
+        elif ndim == 3 and np.allclose(U[0][1, 1, 1], U[0][-1, -1, -1].conj()):
+            real = True
+    if compute_fft and np.issubdtype(U[0].dtype, np.floating):
+        real = True
 
     # Geometry of output image
     kmax = int(max(shape)/2) if kmax is None else int(kmax)
@@ -202,7 +212,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
 
     # Bin coordinates
     kbins = cp.arange(int(np.ceil(kr.max().get())))
-    kbinned = cp.digitize(kr.ravel(), kbins)
+    kbinned = cp.digitize(kr, kbins)
     kbinned[...] -= 1
 
     del kr
@@ -212,6 +222,19 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     # Convert to int16
     kbinned = kbinned.astype(cp.int16)
 
+    # Enumerate indices in each bin
+    k1bins, k2bins = [], []
+    for ki in kn:
+        mask = kbinned == ki
+        temp1 = cp.where(mask)
+        if real:
+            temp2 = cp.where(mask[..., :shape[-1]//2+1])
+        else:
+            temp2 = temp1
+        k1bins.append(cp.ravel_multi_index(temp1, shape))
+        k2bins.append(cp.ravel_multi_index(temp2, shape))
+
+    del kbinned
     mempool.free_all_blocks()
     pinned_mempool.free_all_blocks()
 
@@ -228,16 +251,6 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
             fft = U[i].astype(complex, copy=False)
         ffts.append(fft)
 
-    mempool.free_all_blocks()
-    pinned_mempool.free_all_blocks()
-
-    # Enumerate indices in each bin
-    kind = []
-    for ki in kn:
-        temp = cp.where(kbinned == ki)[0].astype(cp.int64)
-        kind.append(temp)
-
-    del kbinned
     mempool.free_all_blocks()
     pinned_mempool.free_all_blocks()
 
@@ -261,14 +274,10 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     f = "f" if not double else ""
     v = "Vec" if ncomp > 1 else ""
     compute_point = _module.get_function(f"computePoint{v}{ndim}D{f}")
-    args = (kind, kn, costheta, kcoords, nsamples, sample_thresh,
+    args = (k1bins, k2bins, kn, costheta, kcoords, nsamples, sample_thresh,
             ndim, dim, shape, double, progress, exclude_upper,
             blocksize, compute_point, *ffts)
     B, norm, omega, counts = _compute_bispectrum(*args)
-
-    # If input data is real, so is bispectrum.
-    if np.issubdtype(U[0].dtype, np.floating):
-        B = B.real
 
     # Set zero values to nan values for division
     mask = counts == 0.
@@ -277,7 +286,8 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
 
     # Get bicoherence and average bispectrum
     b = np.abs(B) / norm
-    B /= counts
+    B.real /= counts
+    B.imag /= counts
 
     # Convert counts to integer type
     if diagnostics:
@@ -387,7 +397,8 @@ void square_root(float* kr, int size) {
 ''', 'square_root')
 
 
-def _compute_bispectrum(kind, kn, costheta, kcoords, nsamples, sample_thresh,
+def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords,
+                        nsamples, sample_thresh,
                         ndim, dim, shape, double, progress,
                         exclude, blocksize, compute_point, *ffts):
     knyq = max(shape) // 2
@@ -405,13 +416,13 @@ def _compute_bispectrum(kind, kn, costheta, kcoords, nsamples, sample_thresh,
     omega = np.zeros((dim, dim), dtype=np.int64)
     for i in range(dim):
         k1 = kn[i]
-        k1ind = kind[i]
+        k1ind = k1bins[i]
         nk1 = k1ind.size
         for j in range(i+1):
             k2 = kn[j]
             if ntheta == 1 and (exclude and k1 + k2 > knyq):
                 continue
-            k2ind = kind[j]
+            k2ind = k2bins[j]
             nk2 = k2ind.size
             nsamp = nsamples[i, j]
             nsamp = int(nsamp) if type(nsamp) is np.int64 \
@@ -1078,19 +1089,22 @@ if __name__ == '__main__':
                                                          kmin=kmin, kmax=kmax,
                                                          ntheta=2, progress=True,
                                                          mean_subtract=True,
-                                                         diagnostics=True, bench=True)
-    print(np.nansum(bispec), np.nansum(bicoh))
+                                                         diagnostics=True,
+                                                         bench=True)
+    print(np.nansum(bispec))#, np.nansum(bicoh))
 
     tidx = 1
     bispec, bicoh, counts = [x[tidx] for x in [bispec, bicoh, counts]]
 
     # Plot
     cmap = 'plasma'
-    labels = [r"$B(k_1, k_2)$", "$b(k_1, k_2)$", "counts"]
-    data = [np.log10(np.abs(bispec)), np.log10(bicoh), np.log10(counts)]
-    fig, axes = plt.subplots(ncols=len(data))
+    labels = [r"$|B(k_1, k_2)|$", "$b(k_1, k_2)$",
+              "$arg \ B(k_1, k_2)$", "counts"]
+    data = [np.log10(np.abs(bispec)), np.log10(bicoh),
+            np.angle(bispec), np.log10(counts)]
+    fig, axes = plt.subplots(ncols=2, nrows=2)
     for i in range(len(data)):
-        ax = axes[i]
+        ax = axes.flat[i]
         im = ax.imshow(data[i], origin="lower",
                        interpolation="nearest",
                        cmap=cmap,
