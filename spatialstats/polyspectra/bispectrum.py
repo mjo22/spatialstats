@@ -50,9 +50,9 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
                     \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2)|}{
             \int\int_{\Omega} d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
                 |\hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
-                    \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2)|}
+                    \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2)|}.
 
-    where :math:`\Omega` is the set of all unique
+    :math:`\Omega` is the set of all unique
     (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`) pairs such that
     :math:`|\mathbf{k}_1| \in [k_1, k_1+1)`,
     :math:`|\mathbf{k}_2| \in [k_2, k_2+1)`, and :math:`arccos(\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2) \in [\\theta, \\theta+\\Delta \\theta)`.
@@ -68,10 +68,10 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
             \sum\limits_{\Omega} \hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
                                  \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2),
 
-    where now \hat{U} is an FFT. For 3D fields, the full sum is often
+    where now :math:`\hat{U}` is an FFT. For 3D fields, the full sum is often
     too large to compute. Instead, we compute a naive monte carlo
     integration over :math:`\Omega_N`, :math:`N` uniform samples from
-    the set :math:`\Omega`
+    the set :math:`\Omega`:
 
      .. math::
         \\bar{B}(k_1, k_2, \\theta) = \\frac{1}{N}
@@ -103,7 +103,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
         Computing ``np.nansum(B*counts, axis=0)/np.sum(counts, axis=0)``
         recovers the bispectrum summed over triangle angles.
         To recover the corresponding bicoherence, evaulate
-        ``np.abs(np.nansum(B, axis=0)) / np.nansum(np.abs(B)/b, axis=0)``
+        ``np.abs(np.nansum(B, axis=0)) / np.nansum(np.abs(B)/b, axis=0)``.
 
     Parameters
     ----------
