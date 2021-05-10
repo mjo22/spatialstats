@@ -18,45 +18,8 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
                double=True, blocksize=128,
                bench=False, progress=False, **kwargs):
     """
-    Compute the bispectrum :math:`B(k_1, k_2, \\theta)` and
-    bicoherence index :math:`b(k_1, k_2, \\theta)` of a
-    scalar or vector field :math:`U` by
-    directly sampling triangles formed by wavevectors with sides
-    :math:`\mathbf{k_1}` and :math:`\mathbf{k_2}` and averaging
-    :math:`\hat{U}(\mathbf{k_1})\hat{U}(\mathbf{k_2})\hat{U}(\mathbf{k_1+k_2})`,
-    where :math:`\hat{U}` is the FFT of :math:`U`.
-
-    The implementation bins together
-    triangles formed by wavevectors with constant wavenumber side lengths
-    :math:`k_1` and :math:`k_2`, and
-    it can return bispectra either binned by or summed over triangle angle
-    :math:`\\theta`.
-
-    :math:`b(k_1, k_2, \\theta)` is computed as
-    :math:`|B(k_1, k_2, \\theta)|` normalized by the sum of
-    :math:`|\hat{U}(\mathbf{k_1})\hat{U}(\mathbf{k_2})\hat{U}(\mathbf{k_1+k_2})|`.
-
-    .. note::
-        This implementation returns an average over triangles,
-        rather than a sum over triangles. One can recover the
-        sum by multiplying ``counts * B`` when ``nsamples = None``.
-        Or, if ``ntheta = None``, evaulate ``omega * B``.
-
-    .. note::
-        When considering the bispectrum as a function of triangle
-        angle, mesh points may be set to ``np.nan`` depending on
-        :math:`k_1, \ k_2`. For example, :math:`\\theta = 0`
-        would yield ``np.nan`` for all
-        :math:`k_1 + k_2 > \\sqrt{2} \ k_{nyq}`, where :math:`k_{nyq}`
-        is the Nyquist frequency.
-        Computing a boolean mask with ``np.isnan`` and reductions
-        like ``np.nansum`` can be useful.
-
-    .. note::
-        Computing ``np.nansum(B*counts, axis=0)/np.sum(counts, axis=0)``
-        recovers the bispectrum summed over triangle angles.
-        To recover the corresponding bicoherence, evaulate
-        ``np.abs(np.nansum(B, axis=0)) / np.nansum(np.abs(B)/b, axis=0)``
+    See the documentation for
+    ``spatialstats.polyspectra.cuda_bispectrum.bispectrum``.
 
     Parameters
     ----------

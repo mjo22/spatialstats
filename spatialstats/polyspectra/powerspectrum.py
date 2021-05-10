@@ -20,20 +20,18 @@ def powerspectrum(*U, average=True, diagnostics=False,
 
     .. math::
         P(k) = \int\limits_{|\mathbf{k}| \in [k, \ k+\Delta k)} 
-               d\mathbf{k} \ |\hat{U}(\mathbf{k})|^2,
+                   d^D \mathbf{k} \ |\hat{U}(\mathbf{k})|^2,
 
-    where :math:`\hat{U}` is the FFT of :math:`U`, :math:`\mathbf{k}`
-    is a wavevector, :math:`k` is a scalar wavenumber, and :math:`\Delta k`
-    is the radial spacing between bins.
+    where :math:`\hat{U}` is the FFT of :math:`U`.
 
     We approximate this integral as
 
     .. math::
+        P(k) = \frac{V_k}{N_k} \sum\limits_{|\mathbf{k}| \in [k, k+\Delta k)}
+                   |\hat{U}(\mathbf{k})|^2,
 
-        P(k) = \frac{V_k}{N_k} \sum\limits_{|\mathbf{k}| \in [k, k+\Delta k)} |\hat{U}(\mathbf{k})|^2,
-
-    where :math:`V_k` is the volume of the :math:`k`th bin and :math:`N_k`
-    is the number of points in the bin.
+    where :math:`V_k` is the volume of the :math:`k\textrm{th}` bin and
+    :math:`N_k` is the number of points in the bin.
 
     Parameters
     ----------

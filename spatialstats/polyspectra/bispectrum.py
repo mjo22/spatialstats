@@ -17,29 +17,79 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
                use_pyfftw=False,
                bench=False, progress=False, **kwargs):
     """
-    Compute the bispectrum :math:`B(k_1, k_2, \\theta)` and
-    bicoherence index :math:`b(k_1, k_2, \\theta)` of a
-    scalar or vector field :math:`U` by
-    directly sampling triangles formed by wavevectors with sides
-    :math:`\mathbf{k_1}` and :math:`\mathbf{k_2}` and averaging
-    :math:`\hat{U}(\mathbf{k_1})\hat{U}(\mathbf{k_2})\hat{U}(\mathbf{k_1+k_2})`,
-    where :math:`\hat{U}` is the FFT of :math:`U`.
+    Estimate the mean bispectrum :math:`\overline{B}(k_1, k_2, \\theta)`
+    and bicoherence index :math:`b(k_1, k_2, \\theta)` of a real
+    scalar or vector field :math:`U`.
 
-    The implementation bins together
-    triangles formed by wavevectors with constant wavenumber side lengths
-    :math:`k_1` and :math:`k_2`, and
-    it can return bispectra either binned by or summed over triangle angle
-    :math:`\\theta`.
+    Assuming statistical homogeneity and isotropy, the bispectrum
+    B(\mathbf{k}_1, \mathbf{k}_2, \mathbf{k}_3) is defined as the
+    3-point correlation function in Fourier space with
+    :mathbf:`\mathbf{k}_1 + \mathbf{k}_2 + \mathbf{k}_3 = 0. For a
+    real :math:`U`,
 
-    :math:`b(k_1, k_2, \\theta)` is computed as
-    :math:`|B(k_1, k_2, \\theta)|` normalized by the sum of
-    :math:`|\hat{U}(\mathbf{k_1})\hat{U}(\mathbf{k_2})\hat{U}(\mathbf{k_1+k_2})|`.
+    .. math::
+        B(\mathbf{k}_1, \mathbf{k}_2, - \mathbf{k}_1 - \mathbf{k}_2) = 
+            \hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
+            \hat{U}^{*}(\mathbf{k}_1+\mathbf{k}_2),
+
+    where :math:`\hat{U}` is the Fourier transform of :math:`U`.
+    We define the mean bispectrum as
+
+    .. math::
+        \overline{B}(k_1, k_2, \\theta) = \int\int_{\Omega}
+            d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
+                \hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
+                    \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2),
+
+    and the bicoherence as
+
+    .. math::
+        b(k_1, k_2, \\theta) = \frac{
+            |\int\int_{\Omega} d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
+                \hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
+                    \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2)|}{
+            \int\int_{\Omega} d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
+                |\hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
+                    \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2)|}
+
+    where :math:`\Omega` is the set of all unique
+    (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`) pairs such that
+    :math:`|\mathbf{k}_1| \in [k_1, k_1+1)`,
+    :math:`|\mathbf{k}_2| \in [k_2, k_2+1)`, and
+    :math:`arccos(\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2) \in
+           [\\theta, \\theta+\\Delta \\theta)`.
+    By "unique" pairs, we mean (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`)
+    but not the complex conjugate evaluations for
+    (:math:`-\mathbf{k}_1`, :math:`-\mathbf{k}_2`). Otherwise,
+    :math:`\overline{B}` would be a real function.
+
+    To calculate :math:`\overline{B}`, we take the average
+
+    .. math::
+        \overline{B}(k_1, k_2, \\theta) = \frac{1}{|\Omega|}
+            \sum\limits_{\Omega} \hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
+                                 \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2),
+
+    where now \hat{U} is an FFT. For 3D fields, the full sum is often
+    too large to compute. Instead, we compute a naive monte carlo
+    integration over :math:`\Omega_N`, :math:`N` uniform samples from
+    the set :math:`\Omega`
+
+     .. math::
+        \overline{B}(k_1, k_2, \\theta) = \frac{1}{N}
+            \sum\limits_{\Omega_N} \hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
+                                 \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2).
+
+    The same procedure is used to compute :math:`b`. By default, this
+    implementation returns :math:`\overline{B}(k_1, k_2)`, the mean
+    bispectrum summed over triangle angle :math:`\\theta`.
+
+    To learn more, read `here<https://arxiv.org/pdf/astro-ph/0112551.pdf>`
 
     .. note::
-        This implementation returns an average over triangles,
-        rather than a sum over triangles. One can recover the
-        sum by multiplying ``counts * B`` when ``nsamples = None``.
-        Or, if ``ntheta = None``, evaulate ``omega * B``.
+        One can recover the sum over triangles by multiplying ``counts * B``
+        when ``nsamples = None``. Or, if ``ntheta = None``,
+        evaulate ``omega * B``.
 
     .. note::
         When considering the bispectrum as a function of triangle
