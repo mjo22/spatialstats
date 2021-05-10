@@ -16,7 +16,9 @@ def powerspectrum(*U, average=True, diagnostics=False,
     """
     Returns the 1D radially averaged power spectrum :math:`P(k)`
     of a real scalar or vector field :math:`U`. Assuming statistical
-    homogeneity and isotropy, this is defined as
+    homogeneity and isotropy, the power spectrum is the
+    2-point correlation function in Fourier space with
+    :math:`\mathbf{k}_1 + \mathbf{k}_2 = 0`. This is defined as
 
     .. math::
         P(k) = \int\limits_{|\mathbf{k}| \in [k, \ k+\Delta k)} 
@@ -30,7 +32,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
         P(k) = \\frac{V_k}{N_k} \sum\limits_{|\mathbf{k}| \in [k, k+\Delta k)}
                    |\hat{U}(\mathbf{k})|^2,
 
-    where :math:`V_k` is the volume of the :math:`k\textrm{th}` bin and
+    where :math:`V_k` is the volume of the bin and
     :math:`N_k` is the number of points in the bin.
 
     Parameters

@@ -55,7 +55,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     :math:`\Omega` is the set of all unique
     (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`) pairs such that
     :math:`|\mathbf{k}_1| \in [k_1, k_1+1)`,
-    :math:`|\mathbf{k}_2| \in [k_2, k_2+1)`, and :math:`arccos(\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2) \in [\\theta, \\theta+\\Delta \\theta)`.
+    :math:`|\mathbf{k}_2| \in [k_2, k_2+1)`, and arccos:math:`(\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2) \in [\\theta, \\theta+\\Delta \\theta)`.
     By "unique" pairs, we mean (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`)
     but not the complex conjugate evaluations for
     (:math:`-\mathbf{k}_1`, :math:`-\mathbf{k}_2`). Otherwise,
