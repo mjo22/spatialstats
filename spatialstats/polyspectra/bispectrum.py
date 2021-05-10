@@ -17,14 +17,14 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
                use_pyfftw=False,
                bench=False, progress=False, **kwargs):
     """
-    Estimate the mean bispectrum :math:`\overline{B}(k_1, k_2, \\theta)`
+    Estimate the mean bispectrum :math:`\\bar{B}(k_1, k_2, \\theta)`
     and bicoherence index :math:`b(k_1, k_2, \\theta)` of a real
     scalar or vector field :math:`U`.
 
     Assuming statistical homogeneity and isotropy, the bispectrum
-    B(\mathbf{k}_1, \mathbf{k}_2, \mathbf{k}_3) is defined as the
+    :math:`B(\mathbf{k}_1, \mathbf{k}_2, \mathbf{k}_3)` is defined as the
     3-point correlation function in Fourier space with
-    :mathbf:`\mathbf{k}_1 + \mathbf{k}_2 + \mathbf{k}_3 = 0. For a
+    :math:`\mathbf{k}_1 + \mathbf{k}_2 + \mathbf{k}_3 = 0`. For a
     real :math:`U`,
 
     .. math::
@@ -36,7 +36,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     We define the mean bispectrum as
 
     .. math::
-        \overline{B}(k_1, k_2, \\theta) = \int\int_{\Omega}
+        \\bar{B}(k_1, k_2, \\theta) = \int\int_{\Omega}
             d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
                 \hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
                     \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2),
@@ -44,7 +44,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     and the bicoherence as
 
     .. math::
-        b(k_1, k_2, \\theta) = \frac{
+        b(k_1, k_2, \\theta) = \\frac{
             |\int\int_{\Omega} d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
                 \hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
                     \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2)|}{
@@ -55,18 +55,16 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     where :math:`\Omega` is the set of all unique
     (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`) pairs such that
     :math:`|\mathbf{k}_1| \in [k_1, k_1+1)`,
-    :math:`|\mathbf{k}_2| \in [k_2, k_2+1)`, and
-    :math:`arccos(\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2) \in
-           [\\theta, \\theta+\\Delta \\theta)`.
+    :math:`|\mathbf{k}_2| \in [k_2, k_2+1)`, and :math:`arccos(\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2) \in [\\theta, \\theta+\\Delta \\theta)`.
     By "unique" pairs, we mean (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`)
     but not the complex conjugate evaluations for
     (:math:`-\mathbf{k}_1`, :math:`-\mathbf{k}_2`). Otherwise,
-    :math:`\overline{B}` would be a real function.
+    :math:`\\bar{B}` would be a real function.
 
-    To calculate :math:`\overline{B}`, we take the average
+    To calculate :math:`\\bar{B}`, we take the average
 
     .. math::
-        \overline{B}(k_1, k_2, \\theta) = \frac{1}{|\Omega|}
+        \\bar{B}(k_1, k_2, \\theta) = \\frac{1}{|\Omega|}
             \sum\limits_{\Omega} \hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
                                  \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2),
 
@@ -76,12 +74,12 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     the set :math:`\Omega`
 
      .. math::
-        \overline{B}(k_1, k_2, \\theta) = \frac{1}{N}
+        \\bar{B}(k_1, k_2, \\theta) = \\frac{1}{N}
             \sum\limits_{\Omega_N} \hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
                                  \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2).
 
     The same procedure is used to compute :math:`b`. By default, this
-    implementation returns :math:`\overline{B}(k_1, k_2)`, the mean
+    implementation returns :math:`\\bar{B}(k_1, k_2)`, the mean
     bispectrum summed over triangle angle :math:`\\theta`.
 
     To learn more, read `here<https://arxiv.org/pdf/astro-ph/0112551.pdf>`

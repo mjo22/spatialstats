@@ -19,7 +19,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
                bench=False, progress=False, **kwargs):
     """
     See the documentation for
-    ``spatialstats.polyspectra.cuda_bispectrum.bispectrum``.
+    ``spatialstats.polyspectra.bispectrum.bispectrum``.
 
     Parameters
     ----------

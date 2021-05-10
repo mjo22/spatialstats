@@ -27,7 +27,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
     We approximate this integral as
 
     .. math::
-        P(k) = \frac{V_k}{N_k} \sum\limits_{|\mathbf{k}| \in [k, k+\Delta k)}
+        P(k) = \\frac{V_k}{N_k} \sum\limits_{|\mathbf{k}| \in [k, k+\Delta k)}
                    |\hat{U}(\mathbf{k})|^2,
 
     where :math:`V_k` is the volume of the :math:`k\textrm{th}` bin and
