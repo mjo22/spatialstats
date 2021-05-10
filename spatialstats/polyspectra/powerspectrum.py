@@ -9,20 +9,31 @@ import numpy as np
 from time import time
 
 
-def powerspectrum(*U, average=False,
+def powerspectrum(*U, average=True, diagnostics=False,
                   kmin=None, kmax=None, npts=None,
                   compute_fft=True, compute_sqr=True,
                   use_pyfftw=False, bench=False, **kwargs):
     """
     Returns the 1D radially averaged power spectrum :math:`P(k)`
-    of a scalar or vector field :math:`U`. This is computed as
+    of a real scalar or vector field :math:`U`. Assuming statistical
+    homogeneity and isotropy, this is defined as
+
+    .. math::
+        P(k) = \int\limits_{|\mathbf{k}| \in [k, \ k+\Delta k)} 
+               d\mathbf{k} \ |\hat{U}(\mathbf{k})|^2,
+
+    where :math:`\hat{U}` is the FFT of :math:`U`, :math:`\mathbf{k}`
+    is a wavevector, :math:`k` is a scalar wavenumber, and :math:`\Delta k`
+    is the radial spacing between bins.
+
+    We approximate this integral as
 
     .. math::
 
-        P(k) = \sum\limits_{|\mathbf{k}| = k} |\hat{U}(\mathbf{k})|^2,
+        P(k) = \frac{V_k}{N_k} \sum\limits_{|\mathbf{k}| \in [k, k+\Delta k)} |\hat{U}(\mathbf{k})|^2,
 
-    where :math:`\hat{U}` is the FFT of :math:`U`, :math:`\mathbf{k}`
-    is a wavevector, and :math:`k` is a scalar wavenumber.
+    where :math:`V_k` is the volume of the :math:`k`th bin and :math:`N_k`
+    is the number of points in the bin.
 
     Parameters
     ----------
@@ -36,6 +47,9 @@ def powerspectrum(*U, average=False,
         If ``True``, average over values in a given
         bin and multiply by the bin volume.
         If ``False``, compute the sum.
+    diagnostics : `bool`, optional
+        Return the standard deviation and number of points
+        in a particular radial bin.
     kmin : `int` or `float`, optional
         Minimum wavenumber in power spectrum bins.
         If ``None``, ``kmin = 1``.
@@ -70,7 +84,11 @@ def powerspectrum(*U, average=False,
     spectrum : `np.ndarray`, shape `(npts,)`
         Radially averaged power spectrum :math:`P(k)`.
     kn : `np.ndarray`, shape `(npts,)`
-        Corresponding bins for spectrum :math:`k`.
+        Left edges :math:`k` of radial bins.
+    std : `np.ndarray`, shape `(npts,)`, optional
+        Sample standard deviation in each bin.
+    counts : `np.ndarray`, shape `(npts,)`, optional
+        Number of points in each bin.
     """
     if bench:
         t0 = time()
@@ -131,7 +149,6 @@ def powerspectrum(*U, average=False,
     # Generate bins
     kn = np.linspace(kmin, kmax, npts, endpoint=True)  # Left edges of bins
     dk = kn[1] - kn[0]
-    kn += dk/2  # Convert kn to bin centers.
 
     # Radially average power spectral density
     if ndim == 1:
@@ -141,20 +158,29 @@ def powerspectrum(*U, average=False,
     elif ndim == 3:
         fac = 4./3.*np.pi
     spectrum = np.zeros_like(kn)
+    std = np.zeros_like(kn)
+    counts = np.zeros(kn.shape, dtype=np.int64)
     for i, ki in enumerate(kn):
-        ii = np.where(np.logical_and(kr > ki-dk/2, kr < ki+dk/2))
+        ii = np.where(np.logical_and(kr >= ki, kr < ki+dk))
+        samples = density[ii]
         if average:
-            dv = fac*np.pi*((ki+dk/2)**ndim-(ki-dk/2)**ndim)
-            spectrum[i] = dv*np.mean(density[ii])
+            dv = fac*np.pi*((ki+dk)**ndim-(ki)**ndim)
+            spectrum[i] = dv*np.mean(samples)
         else:
-            spectrum[i] = np.sum(density[ii])
+            spectrum[i] = np.sum(samples)
+        counts[i] = samples.size
+        std[i] = np.std(samples)
 
     del density, kr
 
     if bench:
         print(f"Time: {time() - t0:.04f} s")
 
-    return spectrum, kn
+    result = [spectrum, kn]
+    if diagnostics:
+        result.extend([std, counts])
+
+    return tuple(result)
 
 
 def _fftn(image, overwrite_input=False, threads=-1, **kwargs):
@@ -220,14 +246,13 @@ def _kmag_sampling(shape, real=True):
 if __name__ == '__main__':
     import pyFC
     from matplotlib import pyplot as plt
-
+    
     dim = 100
     fc = pyFC.LogNormalFractalCube(
         ni=dim, nj=dim, nk=dim, kmin=10, mean=1, beta=-5/3)
     fc.gen_cube()
     data = fc.cube
 
-    # psdFC = fc.iso_power_spec()
     psd, kn = powerspectrum(data)
 
     print(psd.mean())

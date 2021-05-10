@@ -11,20 +11,13 @@ import cupy as cp
 from cupyx.scipy import fft as cufft
 
 
-def powerspectrum(*U, average=False,
+def powerspectrum(*U, average=True, diagnostics=False,
                   kmin=None, kmax=None, npts=None,
                   compute_fft=True, compute_sqr=True,
                   double=True, bench=False, **kwargs):
     """
-    Returns the 1D radially averaged power spectrum :math:`P(k)`
-    of a scalar or vector field :math:`U`. This is computed as
-
-    .. math::
-
-        P(k) = \sum\limits_{|\mathbf{k}| = k} |\hat{U}(\mathbf{k})|^2,
-
-    where :math:`\hat{U}` is the FFT of :math:`U`, :math:`\mathbf{k}`
-    is a wavevector, and :math:`k` is a scalar wavenumber.
+    See the documentation for
+    ``spatialstats.polyspectra.powerspectrum.powerspectrum``.
 
     Parameters
     ----------
@@ -38,6 +31,9 @@ def powerspectrum(*U, average=False,
         If ``True``, average over values in a given
         bin and multiply by the bin volume.
         If ``False``, compute the sum.
+    diagnostics : `bool`, optional
+        Return the standard deviation and number of points
+        in a particular radial bin.
     kmin : `int` or `float`, optional
         Minimum wavenumber in power spectrum bins.
         If ``None``, ``kmin = 1``.
@@ -71,7 +67,11 @@ def powerspectrum(*U, average=False,
     spectrum : `np.ndarray`, shape `(npts,)`
         Radially averaged power spectrum :math:`P(k)`.
     kn : `np.ndarray`, shape `(npts,)`
-        Corresponding bins for spectrum :math:`k`.
+        Left edges :math:`k` of radial bins.
+    std : `np.ndarray`, shape `(npts,)`, optional
+        Sample standard deviation in each bin.
+    counts : `np.ndarray`, shape `(npts,)`, optional
+        Number of points in each bin.
     """
     if bench:
         t0 = time()
@@ -139,7 +139,6 @@ def powerspectrum(*U, average=False,
     # Generate bins
     kn = cp.linspace(kmin, kmax, npts, endpoint=True)  # Left edges of bins
     dk = kn[1] - kn[0]
-    kn += dk/2  # Convert kn to bin centers.
 
     # Radially average power spectral density
     if ndim == 1:
@@ -149,13 +148,18 @@ def powerspectrum(*U, average=False,
     elif ndim == 3:
         fac = 4./3.*np.pi
     spectrum = cp.zeros_like(kn)
+    std = cp.zeros_like(kn)
+    counts = cp.zeros(kn.shape, dtype=np.int64)
     for i, ki in enumerate(kn):
-        ii = cp.where(np.logical_and(kr >= ki-dk/2, kr < ki+dk/2))
+        ii = cp.where(np.logical_and(kr >= ki, kr < ki+dk))
+        samples = density[ii]
         if average:
-            dv = fac*cp.pi*((ki+dk/2)**ndim-(ki-dk/2)**ndim)
-            spectrum[i] = dv*cp.mean(density[ii])
+            dv = fac*cp.pi*((ki+dk)**ndim-(ki)**ndim)
+            spectrum[i] = dv*cp.mean(samples)
         else:
-            spectrum[i] = cp.sum(density[ii])
+            spectrum[i] = cp.sum(samples)
+        counts[i] = samples.size
+        std[i] = np.std(samples)
 
     spectrum = cp.asnumpy(spectrum)
     kn = cp.asnumpy(kn)
@@ -167,7 +171,11 @@ def powerspectrum(*U, average=False,
     if bench:
         print(f"Time: {time() - t0:.04f} s")
 
-    return spectrum, kn
+    result = [spectrum, kn]
+    if diagnostics:
+        result.extend([std, counts])
+
+    return tuple(result)
 
 
 def _cufftn(data, overwrite_input=False, **kwargs):
@@ -256,7 +264,7 @@ if __name__ == '__main__':
     # psdFC = fc.iso_power_spec()
     psd, kn = powerspectrum(data)
 
-    print(psd.mean(), psd.max())
+    print(psd.mean())
 
     def zero_log10(s):
         '''
