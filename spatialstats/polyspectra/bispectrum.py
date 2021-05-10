@@ -82,7 +82,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     implementation returns :math:`\\bar{B}(k_1, k_2)`, the mean
     bispectrum summed over triangle angle :math:`\\theta`.
 
-    To learn more, read `here<https://arxiv.org/pdf/astro-ph/0112551.pdf>`
+    To learn more, read `here <https://arxiv.org/pdf/astro-ph/0112551.pdf>`_.
 
     .. note::
         One can recover the sum over triangles by multiplying ``counts * B``

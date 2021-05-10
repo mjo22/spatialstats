@@ -29,8 +29,6 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
         ``U1, U2, U3`` where ``Ui`` is the ith vector component.
         Each ``Ui`` should be 2D or 3D (respectively), and
         must have the same ``Ui.shape`` and ``Ui.dtype``.
-        If ``Ui`` are type ``cp.ndarray`` and complex-valued, it will
-        by default be overwritten when taking FFTs to save memory.
         The vector bispectrum will be computed as the sum over bispectra
         of each component.
     kmin : `int`, optional
