@@ -20,9 +20,6 @@ import datetime
 from configparser import ConfigParser
 
 sys.path.insert(0, os.path.abspath('..'))
-#sys.path.insert(0, os.path.abspath('../spatialstats/polyspectra'))
-#sys.path.insert(0, os.path.abspath('../spatialstats/points'))
-#sys.path.insert(0, os.path.abspath('../spatialstats/utils'))
 
 conf = ConfigParser()
 conf.read([os.path.join(os.path.dirname(__file__), '..', 'setup.cfg')])
@@ -44,7 +41,9 @@ highlight_language = 'python3'
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ['sphinx.ext.autodoc', 'sphinx.ext.napoleon']
+extensions = ['sphinx.ext.autodoc',
+              'sphinx.ext.napoleon',
+              'sphinx.ext.autosectionlabel']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

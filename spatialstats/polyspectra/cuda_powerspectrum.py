@@ -16,8 +16,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
                   compute_fft=True, compute_sqr=True,
                   double=True, bench=False, **kwargs):
     """
-    See the documentation for
-    ``spatialstats.polyspectra.powerspectrum.powerspectrum``.
+    See the documentation for the :ref:`CPU version<powerspectrum>`.
 
     Parameters
     ----------
@@ -67,11 +66,14 @@ def powerspectrum(*U, average=True, diagnostics=False,
     spectrum : `np.ndarray`, shape `(npts,)`
         Radially averaged power spectrum :math:`P(k)`.
     kn : `np.ndarray`, shape `(npts,)`
-        Left edges :math:`k` of radial bins.
-    std : `np.ndarray`, shape `(npts,)`, optional
-        Sample standard deviation in each bin.
+        Left edges :math:`k` of the radial bins.
+    stderr : `np.ndarray`, shape `(npts,)`, optional
+        Standard error of the mean multiplied with :math:`V_k`
+        in each bin.
+    vol : `np.ndarray`, shape `(npts,)`, optional
+        Volume :math:`V_k` of each bin.
     counts : `np.ndarray`, shape `(npts,)`, optional
-        Number of points in each bin.
+        Number of points :math:`N_k` in each bin.
     """
     if bench:
         t0 = time()
@@ -95,7 +97,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
     mempool = cp.get_default_memory_pool()
     pinned_mempool = cp.get_default_pinned_memory_pool()
 
-    # Compute power spectral density with memory efficiency
+    # Compute pqower spectral density with memory efficiency
     density = None
     comp = cp.empty(shape, dtype=dtype)
     for i in range(ncomp):
@@ -118,7 +120,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
         pinned_mempool.free_all_blocks()
 
     # Need to double count if using rfftn
-    if real:
+    if real and compute_fft:
         density[...] *= 2
 
     # Get radial coordinates
@@ -148,21 +150,22 @@ def powerspectrum(*U, average=True, diagnostics=False,
     elif ndim == 3:
         fac = 4./3.*np.pi
     spectrum = cp.zeros_like(kn)
-    std = cp.zeros_like(kn)
+    stderr = cp.zeros_like(kn)
+    vol = cp.zeros_like(kn)
     counts = cp.zeros(kn.shape, dtype=np.int64)
     for i, ki in enumerate(kn):
-        ii = cp.where(np.logical_and(kr >= ki, kr < ki+dk))
+        ii = cp.where(cp.logical_and(kr >= ki, kr < ki+dk))
         samples = density[ii]
+        vk = fac*cp.pi*((ki+dk)**ndim-(ki)**ndim)
         if average:
-            dv = fac*cp.pi*((ki+dk)**ndim-(ki)**ndim)
-            spectrum[i] = dv*cp.mean(samples)
+            spectrum[i] = vk*cp.mean(samples)
         else:
             spectrum[i] = cp.sum(samples)
-        counts[i] = samples.size
-        std[i] = np.std(samples)
-
-    spectrum = cp.asnumpy(spectrum)
-    kn = cp.asnumpy(kn)
+        if diagnostics:
+            Nk = samples.size
+            stderr[i] = vk * (cp.std(samples, ddof=1) / cp.sqrt(Nk))
+            vol[i] = vk
+            counts[i] = Nk
 
     del density, kr
     mempool.free_all_blocks()
@@ -171,9 +174,9 @@ def powerspectrum(*U, average=True, diagnostics=False,
     if bench:
         print(f"Time: {time() - t0:.04f} s")
 
-    result = [spectrum, kn]
+    result = [spectrum.get(), kn.get()]
     if diagnostics:
-        result.extend([std, counts])
+        result.extend([stderr.get(), vol.get(), counts.get()])
 
     return tuple(result)
 
@@ -261,15 +264,14 @@ if __name__ == '__main__':
     fc.gen_cube()
     data = fc.cube
 
-    # psdFC = fc.iso_power_spec()
-    psd, kn = powerspectrum(data)
+    psd, kn, stderr, vol, N = powerspectrum(data, diagnostics=True)
 
     print(psd.mean())
 
     def zero_log10(s):
-        '''
+        """
         Takes logarithm of an array while retaining the zeros
-        '''
+        """
         sp = np.where(s > 0., s, 1)
         return np.log10(sp)
 
@@ -278,8 +280,8 @@ if __name__ == '__main__':
     idxs = np.where(log_kn >= np.log10(fc.kmin))
     m, b = np.polyfit(log_kn[idxs], log_psd[idxs], 1)
 
-    plt.plot(log_kn, log_psd,
-             label=rf'PSD, $\beta = {fc.beta}$', color='g')
+    plt.errorbar(kn, psd,
+                 label=rf'PSD, $\beta = {fc.beta}$', color='g')
     plt.plot(log_kn[idxs], m*log_kn[idxs]+b,
              label=rf'Fit, $\beta = {m}$', color='k')
     plt.ylabel(r"$\log{P(k)}$")

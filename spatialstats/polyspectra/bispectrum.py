@@ -1,4 +1,6 @@
 """
+.. _bispectrum:
+
 Bispectrum CPU implementation using Numba parallelization.
 
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
@@ -10,11 +12,9 @@ import numba as nb
 from time import time
 
 
-def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
-               nsamples=None, sample_thresh=None,
-               exclude_upper=False, mean_subtract=False,
-               compute_fft=True, diagnostics=False,
-               use_pyfftw=False,
+def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
+               diagnostics=False, nsamples=None, sample_thresh=None,
+               compute_fft=True, exclude_upper=False, use_pyfftw=False,
                bench=False, progress=False, **kwargs):
     """
     Estimate the mean bispectrum :math:`\\bar{B}(k_1, k_2, \\theta)`
@@ -25,7 +25,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     :math:`B(\mathbf{k}_1, \mathbf{k}_2, \mathbf{k}_3)` is defined as the
     3-point correlation function in Fourier space with
     :math:`\mathbf{k}_1 + \mathbf{k}_2 + \mathbf{k}_3 = 0`. For a
-    real :math:`U`,
+    real :math:`U`
 
     .. math::
         B(\mathbf{k}_1, \mathbf{k}_2, - \mathbf{k}_1 - \mathbf{k}_2) = 
@@ -36,7 +36,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     We define the mean bispectrum as
 
     .. math::
-        \\bar{B}(k_1, k_2, \\theta) = \int\int_{\Omega}
+        \\bar{B}(k_1, k_2, \\theta) = \\frac{1}{V_1 V_2} \int\int_{\Omega}
             d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
                 \hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
                     \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2),
@@ -55,7 +55,8 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     :math:`\Omega` is the set of all unique
     (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`) pairs such that
     :math:`|\mathbf{k}_1| \in [k_1, k_1+1)`,
-    :math:`|\mathbf{k}_2| \in [k_2, k_2+1)`, and arccos:math:`(\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2) \in [\\theta, \\theta+\\Delta \\theta)`.
+    :math:`|\mathbf{k}_2| \in [k_2, k_2+1)`, and
+    :math:`\\arccos{(\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2)} \in [\\theta, \\theta+\\Delta \\theta)`.
     By "unique" pairs, we mean (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`)
     but not the complex conjugate evaluations for
     (:math:`-\mathbf{k}_1`, :math:`-\mathbf{k}_2`). Otherwise,
@@ -69,12 +70,12 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
                                  \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2),
 
     where now :math:`\hat{U}` is an FFT. For 3D fields, the full sum is often
-    too large to compute. Instead, we compute a naive monte carlo
+    too large to compute. Instead, we compute a naive Monte Carlo
     integration over :math:`\Omega_N`, :math:`N` uniform samples from
     the set :math:`\Omega`:
 
      .. math::
-        \\bar{B}(k_1, k_2, \\theta) = \\frac{1}{N}
+        \\bar{B}_N(k_1, k_2, \\theta) = \\frac{1}{N}
             \sum\limits_{\Omega_N} \hat{U}(\mathbf{k}_1)\hat{U}(\mathbf{k}_2)
                                  \hat{U}^{*}(\mathbf{k}_1 + \mathbf{k}_2).
 
@@ -85,7 +86,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     To learn more, read `here <https://arxiv.org/pdf/astro-ph/0112551.pdf>`_.
 
     .. note::
-        One can recover the sum over triangles by multiplying ``counts * B``
+        One can recover the sum over triangles by multiplying ``omega_N * B``
         when ``nsamples = None``. Or, if ``ntheta = None``,
         evaulate ``omega * B``.
 
@@ -100,7 +101,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
         like ``np.nansum`` can be useful.
 
     .. note::
-        Computing ``np.nansum(B*counts, axis=0)/np.sum(counts, axis=0)``
+        Computing ``np.nansum(B*omega_N, axis=0)/np.sum(omega_N, axis=0)``
         recovers the bispectrum summed over triangle angles.
         To recover the corresponding bicoherence, evaulate
         ``np.abs(np.nansum(B, axis=0)) / np.nansum(np.abs(B)/b, axis=0)``.
@@ -115,17 +116,20 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
         same ``Ui.shape`` and ``Ui.dtype``. The vector
         bispectrum will be computed as the sum over bispectra
         of each component.
+    ntheta : `int`, optional
+        Number of angular bins :math:`\\theta` between triangles
+        formed by wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
+        If ``None``, sum over all triangle angles. Otherwise,
+        return a bispectrum for each angular bin.
     kmin : `int`, optional
         Minimum wavenumber in bispectrum calculation.
         If ``None``, ``kmin = 1``.
     kmax : `int`, optional
         Maximum wavenumber in bispectrum calculation.
         If ``None``, ``kmax = max(U.shape)//2``
-    ntheta : `int`, optional
-        Number of angular bins :math:`\\theta` between triangles
-        formed by wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
-        If ``None``, sum over all triangle angles. Otherwise,
-        return a bispectrum for each angular bin.
+    diagnostics : `bool`, optional
+        Return the optional sampling and error diagnostics,
+        documented below.
     nsamples : `int`, `float` or `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of sample triangles or fraction of total
         possible triangles. This may be an array that
@@ -136,20 +140,14 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
         this number, start to use sampling instead of exact
         calculation. If ``None``, switch to exact calculation
         when ``nsamples`` is less than the size of the sample space.
-    exclude_upper : `bool`, optional
-        If ``True``, set points where :math:`k_1 + k_2 > k_{nyq}`
-        to ``np.nan``. This keyword only applies when summing
-        over angles, e.g. when ``ntheta is None``.
-    mean_subtract : `bool`, optional
-        Subtract mean from input data to highlight
-        off-axis components in bicoherence.
     compute_fft : `bool`, optional
         If ``False``, do not take the FFT of the input data.
         FFTs should not be passed with the zero-frequency
         component in the center.
-    diagnostics : `bool`, optional
-        Return the optional sampling diagnostics,
-        documented below.
+    exclude_upper : `bool`, optional
+        If ``True``, set points where :math:`k_1 + k_2 > k_{nyq}`
+        to ``np.nan``. This keyword only applies when summing
+        over angles, e.g. when ``ntheta is None``.
     use_pyfftw : `bool`, optional
         If ``True``, use ``pyfftw`` instead of ``np.fft``
         to compute FFTs.
@@ -168,33 +166,26 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     b : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
         Bicoherence index :math:`b(k_1, k_2, \\theta)`.
     kn : `np.ndarray`, shape `(kmax-kmin+1,)`
-        Wavenumbers :math:`k_1` or :math:`k_2` along axis of bispectrum.
+        Left edges of wavenumber bins :math:`k_1` or :math:`k_2`
+        along axis of bispectrum.
     theta : `np.ndarray`, shape `(m,)`, optional
         Left edges of angular bins :math:`\\theta`, ranging from
         :math:`[0, \ \\pi)`.
+    stderr : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
+        Standard error of the mean for each bin. This can be an
+        error estimate for the Monte Carlo integration.
+    omega_N : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
+        Number of evaluations in the bispectrum sum, :math:`|\\Omega_N|`.
     omega : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
-        Number of possible triangles in the sample space
-        for a particular :math:`k_1, \ k_2`, unrestricted by
-        the Nyquist frequency.
-    counts : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
-        Number of evaluations in the bispectrum sum.
+        Number of possible triangles in the sample space, :math:`|\\Omega|`.
+        This is implemented for if sampling were *not* restricted by the Nyquist
+        frequency. Note that this is only implemented for ``ntheta = None``.
     """
     shape, ndim = nb.typed.List(U[0].shape), U[0].ndim
     ncomp = len(U)
 
     if ndim not in [2, 3]:
         raise ValueError("Data must be 2D or 3D.")
-
-    # Determine if input is real or complex
-    real = False
-    if not compute_fft:
-        # ...unideal way to check if FFT satisfies U(-k) = U*(k)
-        if ndim == 2 and np.allclose(U[1, 1], U[-1, -1].conj()):
-            real = True
-        elif ndim == 3 and np.allclose(U[1, 1, 1], U[-1, -1, -1].conj()):
-            real = True
-    elif np.issubdtype(U[0].dtype, np.floating):
-        real = True
 
     # Geometry of output image
     kmax = int(max(shape)/2) if kmax is None else int(kmax)
@@ -237,10 +228,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     for ki in kn:
         mask = kbinned == ki
         temp1 = np.where(mask)
-        if real:
-            temp2 = np.where(mask[..., :shape[-1]//2+1])
-        else:
-            temp2 = temp1
+        temp2 = np.where(mask[..., :shape[-1]//2+1])
         k1bins.append(np.ravel_multi_index(temp1, shape))
         k2bins.append(np.ravel_multi_index(temp2, shape))
 
@@ -250,7 +238,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     ffts = []
     for i in range(ncomp):
         if compute_fft:
-            temp = U[i] - U[i].mean() if mean_subtract else U[i]
+            temp = U[i]
             if use_pyfftw:
                 fft = _fftn(temp, **kwargs)
             else:
@@ -278,32 +266,34 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
 
     # Run main loop
     compute_point = eval(f"_compute_point{ndim}D")
-    args = (k1bins, k2bins, kn, costheta, kcoords, nsamples, sample_thresh,
-            ndim, dim, shape, progress, exclude_upper, compute_point, *ffts)
-    B, norm, omega, counts = _compute_bispectrum(*args)
+    args = (k1bins, k2bins, kn, costheta, kcoords,
+            nsamples, sample_thresh, ndim, dim, shape,
+            progress, exclude_upper, diagnostics, compute_point, *ffts)
+    B, norm, omega, omega_N, stderr = _compute_bispectrum(*args)
 
     # Set zero values to nan values for division
-    mask = counts == 0.
+    mask = omega_N == 0.
     norm[mask] = np.nan
-    counts[mask] = np.nan
+    omega_N[mask] = np.nan
 
     # Get bicoherence and average bispectrum
     b = np.abs(B) / norm
-    B.real /= counts
-    B.imag /= counts
+    B.real /= omega_N
+    B.imag /= omega_N
 
-    # Convert counts to integer type
+    # Convert omega_N to integer type
     if diagnostics:
-        counts = counts.astype(np.int64)
-        counts[mask] = 0
+        omega_N = omega_N.astype(np.int64)
+        omega_N[mask] = 0
 
     # Switch back to theta monotonically increasing
     if ntheta is not None:
         B[...] = np.flip(B, axis=0)
         b[...] = np.flip(b, axis=0)
-        counts[...] = np.flip(counts, axis=0)
+        omega_N[...] = np.flip(omega_N, axis=0)
+        stderr[...] = np.flip(stderr, axis=0)
     else:
-        B, b, counts = B[0], b[0], counts[0]
+        B, b, omega_N, stderr = B[0], b[0], omega_N[0], stderr[0]
 
     if bench:
         print(f"Time: {time() - t0:.04f} s")
@@ -312,7 +302,7 @@ def bispectrum(*U, kmin=None, kmax=None, ntheta=None,
     if ntheta is not None:
         result.append(theta)
     if diagnostics:
-        result.extend([omega, counts])
+        result.extend([stderr, omega_N, omega])
 
     return tuple(result)
 
@@ -364,13 +354,14 @@ def _fftn(image, overwrite_input=False, threads=-1, **kwargs):
 @nb.njit(parallel=True)
 def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords, nsamples,
                         sample_thresh, ndim, dim, shape, progress,
-                        exclude, compute_point, *ffts):
+                        exclude, diagnostics, compute_point, *ffts):
     knyq = max(shape) // 2
     ntheta = costheta.size
     bispec = np.full((ntheta, dim, dim), np.nan+1.j*np.nan, dtype=np.complex128)
     binorm = np.full((ntheta, dim, dim), np.nan, dtype=np.float64)
-    counts = np.full((ntheta, dim, dim), np.nan, dtype=np.float64)
+    omega_N = np.full((ntheta, dim, dim), np.nan, dtype=np.float64)
     omega = np.zeros((dim, dim), dtype=np.int64)
+    stderr = np.full((ntheta, dim, dim), np.nan, dtype=np.float64)
     for i in range(dim):
         k1 = kn[i]
         k1ind = k1bins[i]
@@ -400,40 +391,54 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords, nsamples,
                           bispecbuf, binormbuf, cthetabuf, countbuf,
                           *ffts)
             if ntheta == 1:
-                _fill_sum(i, j, bispec, binorm, counts,
-                          bispecbuf, binormbuf, countbuf)
+                _fill_sum(i, j, bispec, binorm, omega_N, stderr,
+                          bispecbuf, binormbuf, countbuf, diagnostics)
             else:
                 binned = np.searchsorted(costheta, cthetabuf)
-                _fill_binned_sum(i, j, ntheta, binned,
-                                 bispec, binorm, counts,
-                                 bispecbuf, binormbuf, countbuf)
+                _fill_binned_sum(i, j, ntheta, binned, bispec, binorm,
+                                 omega_N, stderr, bispecbuf, binormbuf,
+                                 countbuf, diagnostics)
             omega[i, j], omega[j, i] = nk1*nk2, nk1*nk2
         if progress:
             with nb.objmode():
                 _printProgressBar(i, dim-1)
-    return bispec, binorm, omega, counts
+    return bispec, binorm, omega, omega_N, stderr
 
 
 @nb.njit(parallel=True, cache=True)
-def _fill_sum(i, j, bispec, binorm, counts, bispecbuf, binormbuf, countbuf):
+def _fill_sum(i, j, bispec, binorm, omega_N, stderr,
+              bispecbuf, binormbuf, countbuf, diagnostics):
     N = countbuf.sum()
     norm = binormbuf.sum()
     value = bispecbuf.sum()
     bispec[0, i, j], bispec[0, j, i] = value, value
     binorm[0, i, j], binorm[0, j, i] = norm, norm
-    counts[0, i, j], counts[0, j, i] = N, N
+    omega_N[0, i, j], omega_N[0, j, i] = N, N
+    if diagnostics and N > 1:
+        variance = np.abs(bispecbuf - (value / N))**2
+        err = np.sqrt(variance.sum() / (N*(N - 1)))
+        stderr[0, i, j], stderr[0, j, i] = err, err
 
 
 @nb.njit(parallel=True, cache=True)
-def _fill_binned_sum(i, j, ntheta, binned, bispec, binorm, counts,
-                     bispecbuf, binormbuf, countbuf):
+def _fill_binned_sum(i, j, ntheta, binned, bispec, binorm, omega_N,
+                     stderr, bispecbuf, binormbuf, countbuf, diagnostics):
     N = np.bincount(binned, weights=countbuf, minlength=ntheta)
     norm = np.bincount(binned, weights=binormbuf, minlength=ntheta)
     value = np.bincount(binned, weights=bispecbuf.real, minlength=ntheta) +\
         1.j*np.bincount(binned, weights=bispecbuf.imag, minlength=ntheta)
     bispec[:, i, j], bispec[:, j, i] = value, value
     binorm[:, i, j], binorm[:, j, i] = norm, norm
-    counts[:, i, j], counts[:, j, i] = N, N
+    omega_N[:, i, j], omega_N[:, j, i] = N, N
+    if diagnostics:
+        variance = np.zeros_like(countbuf)
+        for n in range(ntheta):
+            if N[n] > 1:
+                idxs = np.where(binned == n)
+                mean = value[n] / N[n]
+                variance[idxs] = np.abs(bispecbuf[idxs] - mean)**2 / (N[n]*(N[n]-1))
+        err = np.sqrt(np.bincount(binned, weights=variance, minlength=ntheta))
+        stderr[:, i, j], stderr[:, j, i] = err, err
 
 
 @nb.njit(parallel=True, cache=True)
@@ -520,23 +525,21 @@ if __name__ == '__main__':
     data = np.random.normal(size=N**2).reshape((N, N))+1
 
     kmin, kmax = 1, 100
-    bispec, bicoh, kn, theta, omega, counts = bispectrum(data, nsamples=None,
-                                                         kmin=kmin, kmax=kmax,
-                                                         ntheta=2, progress=True,
-                                                         mean_subtract=True,
-                                                         diagnostics=True,
-                                                         bench=True)
+    result = bispectrum(data, nsamples=None, kmin=kmin, kmax=kmax,
+                        ntheta=2, progress=True, diagnostics=True, bench=True)
+    bispec, bicoh, kn, theta, stderr, omega_N, omega = result
+
     print(np.nansum(bispec))#, np.nansum(bicoh))
 
-    tidx = 1
-    bispec, bicoh, counts = [x[tidx] for x in [bispec, bicoh, counts]]
+    tidx = 0
+    bispec, bicoh, omega_N, stderr = [x[tidx] for x in [bispec, bicoh, omega_N, stderr]]
 
     # Plot
     cmap = 'plasma'
     labels = [r"$|B(k_1, k_2)|$", "$b(k_1, k_2)$",
-              "$arg \ B(k_1, k_2)$", "counts"]
+              "$arg \ B(k_1, k_2)$", "std error"]#, "counts"]
     data = [np.log10(np.abs(bispec)), np.log10(bicoh),
-            np.angle(bispec), np.log10(counts)]
+            np.angle(bispec), np.log10(stderr)]#, np.log10(omega_N)]
     fig, axes = plt.subplots(ncols=2, nrows=2)
     for i in range(len(data)):
         ax = axes.flat[i]

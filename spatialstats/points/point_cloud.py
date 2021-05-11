@@ -2,7 +2,7 @@
 Routines to calculate the radial distribution function :math:`g(r)`
 and isotropic structure factor :math:`S(q)`.
 
-See https://en.wikipedia.org/wiki/Radial_distribution_function
+See `here <https://en.wikipedia.org/wiki/Radial_distribution_function>`_
 to learn more.
 
 Adapted from https://github.com/wenyan4work/point_cloud.
