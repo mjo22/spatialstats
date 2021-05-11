@@ -48,4 +48,4 @@ pip install spatialstats
 
 #### Additional Dependencies ####
 
-<tt>spatialstats</tt> does not load any of its routines until the time of import (lazy loading), so the only installation requirement is [numpy](https://github.com/numpy/numpy). This is to keep the flexibility and extensibility of <tt>spatialstats</tt> as a package of disconnected routines. Users may need to add additional dependencies after installation, such as [scipy](https://github.com/scipy/scipy), [numba](https://github.com/numba/numba)>=0.50, [cupy](https://github.com/cupy/cupy)>=8.0, and [pyfftw](https://github.com/pyFFTW/pyFFTW).
+<tt>spatialstats</tt> does not load any of its routines until the time of import (lazy loading), so the only installation requirement is [numpy](https://github.com/numpy/numpy). This is to keep the flexibility of <tt>spatialstats</tt> as a package of disconnected routines. Users may need to add additional dependencies after installation, such as [scipy](https://github.com/scipy/scipy), [numba](https://github.com/numba/numba)>=0.50, [cupy](https://github.com/cupy/cupy)>=8.0, and [pyfftw](https://github.com/pyFFTW/pyFFTW).
