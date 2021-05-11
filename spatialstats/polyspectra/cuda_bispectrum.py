@@ -77,7 +77,7 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
     Returns
     -------
     B : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
-        Bispectrum :math:`B(k_1, k_2, \\theta)`.
+        Mean bispectrum :math:`\\bar{B}(k_1, k_2, \\theta)`.
     b : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
         Bicoherence index :math:`b(k_1, k_2, \\theta)`.
     kn : `np.ndarray`, shape `(kmax-kmin+1,)`

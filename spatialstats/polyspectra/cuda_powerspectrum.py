@@ -66,7 +66,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
     spectrum : `np.ndarray`, shape `(npts,)`
         Radially averaged power spectrum :math:`P(k)`.
     kn : `np.ndarray`, shape `(npts,)`
-        Left edges :math:`k` of the radial bins.
+        Left edges of radial bins :math:`k`.
     stderr : `np.ndarray`, shape `(npts,)`, optional
         Standard error of the mean multiplied with :math:`V_k`
         in each bin.
