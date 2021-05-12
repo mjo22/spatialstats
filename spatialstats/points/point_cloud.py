@@ -43,10 +43,10 @@ def structure_factor(gr, r, N, boxsize, q=None, **kwargs):
     ----------
     gr : `np.ndarray`
         The radial distribution function :math:`g(r)`
-        from ``spatialstats.points.point_cloud.rdf``.
+        from :ref:`spatialstats.points.rdf<rdf>`.
     r : `np.ndarray`
         The domain of :math:`g(r)`
-        from ``spatialstats.points.point_cloud.rdf``.
+        from :ref:`spatialstats.points.rdf<rdf>`.
     N : `int`
         The number of particles :math:`N`.
     boxsize : `list` of `float`
@@ -96,6 +96,8 @@ def structure_factor(gr, r, N, boxsize, q=None, **kwargs):
 
 def rdf(points, boxsize, rmin=None, rmax=None, npts=100, bench=False):
     """
+    .. _rdf:
+
     Calculate the radial distribution function :math:`g(r)`
     for a set of :math:`N` particle positions in a 2D or 3D periodic box.
 
