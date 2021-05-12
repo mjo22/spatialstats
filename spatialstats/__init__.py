@@ -10,20 +10,17 @@ import importlib
 import warnings
 from .Configuration import Configuration
 
-#
-# Set Configuration object
-#
 
+# Create setters for config and create config object
 
 def warn(action):
+    """Set warnings filter"""
     warnings.simplefilter(action)
     return action
 
 
 def gpu(id):
-    """
-    Configure CuPy GPU usage
-    """
+    """Configure CuPy GPU usage"""
     if id is not False:
         try:
             import cupy
@@ -44,10 +41,7 @@ def gpu(id):
 config = Configuration({warn: "ignore", gpu: False})
 
 
-#
-# Lazy load subpackages
-#
-
+# Setting the __init__.py __getattr__ will lazy load subpackages
 
 def __getattr__(name):
     if name == 'config':
@@ -56,7 +50,6 @@ def __getattr__(name):
         return importlib.import_module("."+name, __name__)
 
 
-#
 # Clean namespace
-#
+
 del gpu, warn, Configuration

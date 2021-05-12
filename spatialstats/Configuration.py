@@ -1,5 +1,5 @@
 """
-A Configuration object
+The spatialstats configuration object
 """
 
 
@@ -8,7 +8,6 @@ class Configuration(object):
     Object that dynamically sets its own properties
     and stores a collection of their user-specified setters.
     """
-
     def __init__(self, setters):
         properties, defaults = [], []
         for setter in setters.keys():
