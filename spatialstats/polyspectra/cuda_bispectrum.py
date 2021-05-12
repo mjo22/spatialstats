@@ -87,7 +87,8 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
         :math:`[0, \ \\pi)`.
     stderr : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
         Standard error of the mean for each bin. This can be an
-        error estimate for the Monte Carlo integration.
+        error estimate for the Monte Carlo integration. To convert
+        to the standard deviation, evaluate ``stderr * np.sqrt(omega_N)``.
     omega_N : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
         Number of evaluations in the bispectrum sum, :math:`|\\Omega_N|`.
     omega : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional

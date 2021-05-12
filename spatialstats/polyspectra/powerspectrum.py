@@ -86,8 +86,8 @@ def powerspectrum(*U, average=True, diagnostics=False,
         Radially averaged power spectrum :math:`P(k)`.
     kn : `np.ndarray`, shape `(npts,)`
         Left edges of radial bins :math:`k`.
-    stderr : `np.ndarray`, shape `(npts,)`, optional
-        Standard error of the mean multiplied with :math:`V_k`
+    stdev : `np.ndarray`, shape `(npts,)`, optional
+        Standard deviation multiplied with :math:`V_k`
         in each bin.
     vol : `np.ndarray`, shape `(npts,)`, optional
         Volume :math:`V_k` of each bin.
@@ -162,7 +162,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
     elif ndim == 3:
         fac = 4./3.*np.pi
     spectrum = np.zeros_like(kn)
-    stderr = np.zeros_like(kn)
+    stdev = np.zeros_like(kn)
     vol = np.zeros_like(kn)
     counts = np.zeros(kn.shape, dtype=np.int64)
     for i, ki in enumerate(kn):
@@ -175,7 +175,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
             spectrum[i] = np.sum(samples)
         if diagnostics:
             Nk = samples.size
-            stderr[i] = vk * (np.std(samples, ddof=1) / np.sqrt(Nk))
+            stdev[i] = vk * np.std(samples, ddof=1)
             vol[i] = vk
             counts[i] = Nk
 
@@ -186,7 +186,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
 
     result = [spectrum, kn]
     if diagnostics:
-        result.extend([stderr, vol, counts])
+        result.extend([stdev, vol, counts])
 
     return tuple(result)
 
@@ -261,7 +261,7 @@ if __name__ == '__main__':
     fc.gen_cube()
     data = fc.cube
 
-    psd, kn, stderr, vol, N = powerspectrum(data, diagnostics=True)
+    psd, kn, stdev, vol, N = powerspectrum(data, diagnostics=True)
 
     print(psd.mean())
 
