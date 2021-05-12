@@ -234,19 +234,22 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
     B.real /= omega_N
     B.imag /= omega_N
 
-    # Convert omega_N to integer type
+    # Prepare diagnostics
     if diagnostics:
-        omega_N = omega_N.astype(np.int64)
-        omega_N[mask] = 0
+        stderr[mask] = cp.nan
+        omega_N = omega_N.astype(cp.int64)
 
     # Switch back to theta monotonically increasing
     if ntheta is not None:
         B[...] = cp.flip(B, axis=0)
         b[...] = cp.flip(b, axis=0)
-        omega_N[...] = cp.flip(omega_N, axis=0)
-        stderr[...] = cp.flip(stderr, axis=0)
+        if diagnostics:
+            omega_N[...] = cp.flip(omega_N, axis=0)
+            stderr[...] = cp.flip(stderr, axis=0)
     else:
-        B, b, omega_N = B[0], b[0], omega_N[0]
+        B, b = B[0], b[0]
+        if diagnostics:
+            omega_N, stderr = omega_N[0], stderr[0]
 
     if bench:
         print(f"Time: {time() - t0:.04f} s")
