@@ -284,7 +284,7 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
 
     # Prepare diagnostics
     if diagnostics:
-        stderr[mask] = np.nan
+        stderr[omega_N <= 1.] = np.nan
         omega_N = omega_N.astype(np.int64)
 
     # Switch back to theta monotonically increasing
