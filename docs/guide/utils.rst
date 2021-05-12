@@ -1,4 +1,4 @@
-utils
+spatialstats.utils
 =============
 
 Averaging

@@ -1,4 +1,4 @@
-points
+spatialstats.points
 ==============
 
 Radial distribution function

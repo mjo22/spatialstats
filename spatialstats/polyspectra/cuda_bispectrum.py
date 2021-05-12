@@ -1,5 +1,5 @@
 """
-Bispectrum GPU implementation using CuPy parallelization.
+Implementation using CuPy acceleration.
 
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 

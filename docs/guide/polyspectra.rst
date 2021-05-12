@@ -1,6 +1,10 @@
-polyspectra
+spatialstats.polyspectra
 ===================
 
+To use GPU routines, run
+
+  >>> import spatialstats as ss
+  >>> ss.config.gpu = True
 
 Bispectrum
 -----------------------------

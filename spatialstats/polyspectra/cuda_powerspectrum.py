@@ -1,5 +1,5 @@
 """
-Power spectrum GPU implementation using CuPy acceleration.
+Implementation using CuPy acceleration.
 
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 

@@ -1,8 +1,6 @@
 """
 .. _powerspectrum:
 
-Power spectrum CPU implementation.
-
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 
 """

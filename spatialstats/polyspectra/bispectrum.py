@@ -1,7 +1,7 @@
 """
 .. _bispectrum:
 
-Bispectrum CPU implementation using Numba parallelization.
+Implementation using Numba acceleration.
 
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 

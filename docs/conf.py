@@ -37,6 +37,7 @@ release = version
 # -- General configuration ---------------------------------------------------
 
 highlight_language = 'python3'
+add_module_names = False
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
