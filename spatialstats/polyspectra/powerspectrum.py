@@ -14,11 +14,11 @@ def powerspectrum(*U, average=True, diagnostics=False,
                   compute_fft=True, compute_sqr=True,
                   use_pyfftw=False, bench=False, **kwargs):
     """
-    Returns the 1D radially averaged power spectrum :math:`P(k)`
+    Returns the isotropically averaged power spectrum :math:`P(k)`
     of a real scalar or vector field :math:`U`. Assuming statistical
-    homogeneity and isotropy, the power spectrum is the
+    homogeneity, the power spectrum is the
     2-point correlation function in Fourier space with
-    :math:`\mathbf{k} + \mathbf{k}' = 0`. We define the radially
+    :math:`\mathbf{k} + \mathbf{k}' = 0`. We define this isotropically
     averaged power spectrum as
 
     .. math::
