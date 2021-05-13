@@ -21,7 +21,7 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
     and bicoherence index :math:`b(k_1, k_2, \\theta)` of a real
     scalar or vector field :math:`U`.
 
-    Assuming statistical homogeneity and isotropy, the bispectrum
+    Assuming statistical homogeneity, the bispectrum
     :math:`B(\mathbf{k}_1, \mathbf{k}_2, \mathbf{k}_3)` is defined as the
     3-point correlation function in Fourier space with
     :math:`\mathbf{k}_1 + \mathbf{k}_2 + \mathbf{k}_3 = 0`. For a
@@ -62,6 +62,14 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
     (:math:`-\mathbf{k}_1`, :math:`-\mathbf{k}_2`). Otherwise,
     :math:`\\bar{B}` would be a real function.
 
+    If the data is also statistically isotropic, then we can say that
+    the bispectrum is only a function of scalar wavenumber,
+    :math:`B = B(k_1, k_2, k_3)`. In this case, :math:`\\bar{B}` accounts
+    for all degrees of freedom of the bispectrum. Use this implementation's
+    variance estimates on the average over :math:`\\Omega`
+    to test this assumption.
+
+
     To calculate :math:`\\bar{B}`, we take the average
 
     .. math::
@@ -72,7 +80,7 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
     where now :math:`\hat{U}` is an FFT. For 3D fields, the full sum is often
     too large to compute. Instead, we compute a naive Monte Carlo
     integration over :math:`\Omega_N`, :math:`N` uniform samples from
-    the set :math:`\Omega`:
+    the set :math:`\Omega`. This defines an unbiased estimator of :math:`\\bar{B}`,
 
      .. math::
         \\bar{B}_N(k_1, k_2, \\theta) = \\frac{1}{N}
