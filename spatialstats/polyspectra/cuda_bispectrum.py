@@ -237,7 +237,6 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
     # Prepare diagnostics
     if diagnostics:
         stderr[omega_N <= 1.] = cp.nan
-        omega_N = omega_N.astype(cp.int64)
 
     # Switch back to theta monotonically increasing
     if ntheta is not None:
@@ -391,7 +390,7 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords,
             bpg = (count + (tpb - 1)) // tpb
             bispecbuf = cp.zeros(count, dtype=complex)
             binormbuf = cp.zeros(count, dtype=float)
-            cthetabuf = cp.zeros(count, dtype=np.float64) if ntheta > 1 \
+            cthetabuf = cp.zeros(count, dtype=float) if ntheta > 1 \
                 else cp.array([0.], dtype=float)
             countbuf = cp.zeros(count, dtype=float)
             compute_point((bpg,), (tpb,), (k1ind, k2ind, *kcoords,
@@ -1047,18 +1046,18 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    N = 200
+    N = 100
     np.random.seed(1234)
-    data = np.random.normal(size=N**2).reshape((N, N))
+    data = np.random.normal(size=N**3).reshape((N, N, N))
 
-    kmin, kmax = 1, 100
-    result = bispectrum(data, data, nsamples=None, kmin=kmin, kmax=kmax,
-                        ntheta=2, progress=True, diagnostics=True, bench=True)
+    kmin, kmax = 1, 50
+    result = bispectrum(data, nsamples=100, kmin=kmin, kmax=kmax,
+                        ntheta=9, progress=True, diagnostics=True, bench=True)
     bispec, bicoh, kn, theta, stderr, omega_N, omega = result
 
     print(np.nansum(bispec))#, np.nansum(bicoh))
 
-    tidx = 0
+    tidx = 4
     bispec, bicoh, omega_N, stderr = [x[tidx] for x in [bispec, bicoh, omega_N, stderr]]
 
     # Plot
