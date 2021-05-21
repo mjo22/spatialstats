@@ -192,7 +192,7 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
             fft = _cufftn(temp, **kwargs)
             del temp
         else:
-            fft = U[i].astype(complex, copy=False)
+            fft = cp.asarray(U[i], dtype=complex)
         ffts.append(fft)
 
     mempool.free_all_blocks()
@@ -1048,16 +1048,17 @@ if __name__ == '__main__':
 
     N = 100
     np.random.seed(1234)
-    data = np.random.normal(size=N**3).reshape((N, N, N))
+    data = np.random.normal(size=N**2).reshape((N, N))
+    data = (data - data.mean()) / data.mean()
 
     kmin, kmax = 1, 50
-    result = bispectrum(data, nsamples=100, kmin=kmin, kmax=kmax,
+    result = bispectrum(data, data, nsamples=int(1e4), kmin=kmin, kmax=kmax,
                         ntheta=9, progress=True, diagnostics=True, bench=True)
     bispec, bicoh, kn, theta, stderr, omega_N, omega = result
 
     print(np.nansum(bispec))#, np.nansum(bicoh))
 
-    tidx = 4
+    tidx = 0
     bispec, bicoh, omega_N, stderr = [x[tidx] for x in [bispec, bicoh, omega_N, stderr]]
 
     # Plot
