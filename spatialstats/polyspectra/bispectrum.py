@@ -82,7 +82,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     too large to compute. Instead, we compute a naive Monte Carlo
     integration by drawing :math:`N` uniform samples
     :math:`(\mathbf{k}_1^n, \mathbf{k}_2^n)` from the set :math:`\Omega`.
-    This defines an unbiased estimator of :math:`\\hat{B}`,
+    This defines an unbiased estimator of :math:`B`,
 
      .. math::
         \\hat{B}(k_1, k_2, \\theta) = \\frac{1}{N}
