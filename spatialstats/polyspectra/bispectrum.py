@@ -30,29 +30,29 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
 
     .. math::
         B(\mathbf{k}_1, \mathbf{k}_2, - \mathbf{k}_1 - \mathbf{k}_2) = 
-            \langle\tilde{u}(\mathbf{k}_1)\tilde{u}(\mathbf{k}_2)
-            \tilde{u}^{*}(\mathbf{k}_1+\mathbf{k}_2)\rangle,
+            \\langle\\tilde{u}(\mathbf{k}_1)\\tilde{u}(\mathbf{k}_2)
+            \\tilde{u}^{*}(\mathbf{k}_1+\mathbf{k}_2)\\rangle,
 
-    where :math:`\tilde{u}` is the Fourier transform of :math:`u`
-    and :math:`\langle\cdot\rangle` is some ensemble average.
+    where :math:`\\tilde{u}` is the Fourier transform of :math:`u`
+    and :math:`\\langle\cdot\\rangle` is some ensemble average.
     We compute our bispectrum as
 
     .. math::
         B(k_1, k_2, \\theta) = \\frac{1}{V_1 V_2} \int\int_{\Omega}
             d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
-                \tilde{u}(\mathbf{k}_1)\tilde{u}(\mathbf{k}_2)
-                    \tilde{u}^{*}(\mathbf{k}_1 + \mathbf{k}_2),
+                \\tilde{u}(\mathbf{k}_1)\\tilde{u}(\mathbf{k}_2)
+                    \\tilde{u}^{*}(\mathbf{k}_1 + \mathbf{k}_2),
 
     and the bicoherence as
 
     .. math::
         b(k_1, k_2, \\theta) = \\frac{
             |\int\int_{\Omega} d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
-                \tilde{u}(\mathbf{k}_1)\tilde{u}(\mathbf{k}_2)
-                    \tilde{u}^{*}(\mathbf{k}_1 + \mathbf{k}_2)|}{
+                \\tilde{u}(\mathbf{k}_1)\\tilde{u}(\mathbf{k}_2)
+                    \\tilde{u}^{*}(\mathbf{k}_1 + \mathbf{k}_2)|}{
             \int\int_{\Omega} d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
-                |\tilde{u}(\mathbf{k}_1)\tilde{u}(\mathbf{k}_2)
-                    \tilde{u}^{*}(\mathbf{k}_1 + \mathbf{k}_2)|}.
+                |\\tilde{u}(\mathbf{k}_1)\\tilde{u}(\mathbf{k}_2)
+                    \\tilde{u}^{*}(\mathbf{k}_1 + \mathbf{k}_2)|}.
 
     :math:`\Omega` is the set of all unique
     (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`) pairs such that
@@ -75,10 +75,10 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
 
     .. math::
         B(k_1, k_2, \\theta) = \\frac{1}{|\Omega|}
-            \sum\limits_{\Omega} \tilde{u}(\mathbf{k}_1)\tilde{u}(\mathbf{k}_2)
-                                 \tilde{u}^{*}(\mathbf{k}_1 + \mathbf{k}_2),
+            \sum\limits_{\Omega} \\tilde{u}(\mathbf{k}_1)\\tilde{u}(\mathbf{k}_2)
+                                 \\tilde{u}^{*}(\mathbf{k}_1 + \mathbf{k}_2),
 
-    where now :math:`\tilde{u}` is an FFT. For 3D fields, the full sum is often
+    where now :math:`\\tilde{u}` is an FFT. For 3D fields, the full sum is often
     too large to compute. Instead, we compute a naive Monte Carlo
     integration by drawing :math:`N` uniform samples
     :math:`(\mathbf{k}_1^n, \mathbf{k}_2^n)` from the set :math:`\Omega`.
@@ -86,8 +86,8 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
 
      .. math::
         \\hat{B}(k_1, k_2, \\theta) = \\frac{1}{N}
-            \sum\limits_{n = 1}^{N} \tilde{u}(\mathbf{k}_1^n)\tilde{u}(\mathbf{k}_2^n)
-                                 \tilde{u}^{*}(\mathbf{k}_1^n + \mathbf{k}_2^n).
+            \sum\limits_{n = 1}^{N} \\tilde{u}(\mathbf{k}_1^n)\\tilde{u}(\mathbf{k}_2^n)
+                                 \\tilde{u}^{*}(\mathbf{k}_1^n + \mathbf{k}_2^n).
 
     The same procedure is used to compute :math:`b`. By default, this
     implementation returns :math:`B(k_1, k_2)`, the mean
