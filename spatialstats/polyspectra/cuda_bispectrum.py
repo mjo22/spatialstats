@@ -11,8 +11,9 @@ from cupyx.scipy import fft as cufft
 from time import time
 
 
-def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
-               diagnostics=False, nsamples=None, sample_thresh=None,
+def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
+               diagnostics=True, error=False,
+               nsamples=None, sample_thresh=None,
                compute_fft=True, exclude_upper=False,
                double=True, blocksize=128,
                bench=False, progress=False, **kwargs):
@@ -21,12 +22,12 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
 
     Parameters
     ----------
-    U : `np.ndarray` or `cp.ndarray`
+    u : `np.ndarray` or `cp.ndarray`
         Scalar or vector field.
-        If vector data, pass arguments as ``U1, U2`` or
-        ``U1, U2, U3`` where ``Ui`` is the ith vector component.
-        Each ``Ui`` should be 2D or 3D (respectively), and
-        must have the same ``Ui.shape`` and ``Ui.dtype``.
+        If vector data, pass arguments as ``u1, u2`` or
+        ``u1, u2, u3`` where ``ui`` is the ith vector component.
+        Each ``ui`` should be 2D or 3D (respectively), and
+        must have the same ``ui.shape`` and ``ui.dtype``.
         The vector bispectrum will be computed as the sum over bispectra
         of each component.
     ntheta : `int`, optional
@@ -39,10 +40,15 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
         If ``None``, ``kmin = 1``.
     kmax : `int`, optional
         Maximum wavenumber in bispectrum calculation.
-        If ``None``, ``kmax = max(U.shape)//2``.
+        If ``None``, ``kmax = max(u.shape)//2``.
     diagnostics : `bool`, optional
-        Return the optional sampling diagnostics,
-        documented below.
+        Return the optional sampling and normalization diagnostics,
+        documented below. Set ``error = True`` to also return the
+        standard error of the mean.
+    error : `bool`, optional
+        Return standard error of the mean of the Monte-Carlo integration.
+        ``diagnostics = True`` must also be set. This will add a bit of
+        time to the calculation.
     nsamples : `int`, `float` or `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of sample triangles or fraction of total
         possible triangles. This may be an array that
@@ -77,7 +83,7 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
     Returns
     -------
     B : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
-        Mean bispectrum :math:`\\bar{B}(k_1, k_2, \\theta)`.
+        Bispectrum :math:`B(k_1, k_2, \\theta)`.
     b : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
         Bicoherence index :math:`b(k_1, k_2, \\theta)`.
     kn : `np.ndarray`, shape `(kmax-kmin+1,)`
@@ -85,16 +91,16 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
     theta : `np.ndarray`, shape `(m,)`, optional
         Left edges of angular bins :math:`\\theta`, ranging from
         :math:`[0, \ \\pi)`.
-    stderr : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
-        Standard error of the mean for each bin. This can be an
-        error estimate for the Monte Carlo integration. To convert
-        to the standard deviation, evaluate ``stderr * np.sqrt(omega_N)``.
-    omega_N : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
+    counts : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
         Number of evaluations in the bispectrum sum, :math:`|\\Omega_N|`.
     omega : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of possible triangles in the sample space, :math:`|\\Omega|`.
         This is implemented for if sampling were *not* restricted by the Nyquist
         frequency. Note that this is only implemented for ``ntheta = None``.
+    stderr : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
+        Standard error of the mean for each bin. This can be an
+        error estimate for the Monte Carlo integration. To convert
+        to the standard deviation, evaluate ``stderr * np.sqrt(counts)``.
     """
 
     if double:
@@ -105,8 +111,8 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
     mempool = cp.get_default_memory_pool()
     pinned_mempool = cp.get_default_pinned_memory_pool()
 
-    shape, ndim = U[0].shape, U[0].ndim
-    ncomp = len(U)
+    shape, ndim = u[0].shape, u[0].ndim
+    ncomp = len(u)
 
     if ndim not in [2, 3]:
         raise ValueError("Data must be 2D or 3D.")
@@ -188,15 +194,15 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
     ffts = []
     for i in range(ncomp):
         if compute_fft:
-            temp = cp.asarray(U[i], dtype=complex)
+            temp = cp.asarray(u[i], dtype=complex)
             fft = _cufftn(temp, **kwargs)
             del temp
         else:
-            fft = cp.asarray(U[i], dtype=complex)
-        ffts.append(fft)
-
-    mempool.free_all_blocks()
-    pinned_mempool.free_all_blocks()
+            fft = cp.asarray(u[i], dtype=complex)
+        ffts.append(fft[..., :shape[-1]//2+1])
+        del fft
+        mempool.free_all_blocks()
+        pinned_mempool.free_all_blocks()
 
     # Sampling settings
     if sample_thresh is None:
@@ -220,35 +226,38 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
     compute_point = _module.get_function(f"computePoint{v}{ndim}D{f}")
     args = (k1bins, k2bins, kn, costheta, kcoords,
             nsamples, sample_thresh, ndim, dim, shape,
-            double, progress, exclude_upper, diagnostics,
+            double, progress, exclude_upper, error,
             blocksize, compute_point, *ffts)
-    B, norm, omega, omega_N, stderr = _compute_bispectrum(*args)
+    B, norm, omega, counts, stderr = _compute_bispectrum(*args)
 
     # Set zero values to nan values for division
-    mask = omega_N == 0.
+    mask = counts == 0.
     norm[mask] = cp.nan
-    omega_N[mask] = cp.nan
+    counts[mask] = cp.nan
 
     # Get bicoherence and average bispectrum
     b = np.abs(B) / norm
-    B.real /= omega_N
-    B.imag /= omega_N
+    B.real /= counts
+    B.imag /= counts
 
     # Prepare diagnostics
-    if diagnostics:
-        stderr[omega_N <= 1.] = cp.nan
+    if error:
+        stderr[counts <= 1.] = cp.nan
 
     # Switch back to theta monotonically increasing
     if ntheta is not None:
         B[...] = cp.flip(B, axis=0)
         b[...] = cp.flip(b, axis=0)
         if diagnostics:
-            omega_N[...] = cp.flip(omega_N, axis=0)
-            stderr[...] = cp.flip(stderr, axis=0)
+            counts[...] = cp.flip(counts, axis=0)
+            if error:
+                stderr[...] = cp.flip(stderr, axis=0)
     else:
         B, b = B[0], b[0]
         if diagnostics:
-            omega_N, stderr = omega_N[0], stderr[0]
+            counts = counts[0]
+            if error:
+                stderr = stderr[0]
 
     if bench:
         print(f"Time: {time() - t0:.04f} s")
@@ -257,7 +266,9 @@ def bispectrum(*U, ntheta=None, kmin=None, kmax=None,
     if theta is not None:
         result.append(theta.get())
     if diagnostics:
-        result.extend([stderr.get(), omega_N.get(), omega])
+        result.extend([counts.get(), omega])
+        if error:
+            result.append(stderr.get())
 
     return tuple(result)
 
@@ -347,7 +358,7 @@ void square_root(float* kr, int size) {
 
 def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords,
                         nsamples, sample_thresh, ndim, dim, shape,
-                        double, progress, exclude, diagnostics,
+                        double, progress, exclude, error,
                         blocksize, compute_point, *ffts):
     knyq = max(shape) // 2
     shape = [cp.int16(Ni) for Ni in shape]
@@ -360,9 +371,9 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords,
     pinned_mempool = cp.get_default_pinned_memory_pool()
     bispec = cp.full((ntheta, dim, dim), cp.nan+1.j*cp.nan, dtype=complex)
     binorm = cp.full((ntheta, dim, dim), cp.nan, dtype=float)
-    omega_N = cp.full((ntheta, dim, dim), cp.nan, dtype=float)
+    counts = cp.full((ntheta, dim, dim), cp.nan, dtype=float)
     omega = np.zeros((dim, dim), dtype=np.int64)
-    if diagnostics:
+    if error:
         stderr = cp.full((ntheta, dim, dim), np.nan, dtype=float)
     else:
         stderr = cp.array([0.], dtype=np.float64)
@@ -401,12 +412,12 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords,
                                            cthetabuf, countbuf,
                                            *ffts))
             if ntheta == 1:
-                _fill_sum(i, j, bispec, binorm, omega_N, stderr,
+                _fill_sum(i, j, bispec, binorm, counts, stderr,
                           bispecbuf, binormbuf, countbuf)
             else:
                 binned = cp.searchsorted(costheta, cthetabuf)
                 _fill_binned_sum(i, j, ntheta, binned,
-                                 bispec, binorm, omega_N, stderr,
+                                 bispec, binorm, counts, stderr,
                                  bispecbuf, binormbuf, countbuf)
             omega[i, j], omega[j, i] = nk1*nk2, nk1*nk2
             del bispecbuf, binormbuf, countbuf, samp
@@ -415,17 +426,17 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords,
         if progress:
             _printProgressBar(i, dim-1)
 
-    return bispec, binorm, omega, omega_N, stderr
+    return bispec, binorm, omega, counts, stderr
 
 
-def _fill_sum(i, j, bispec, binorm, omega_N, stderr,
+def _fill_sum(i, j, bispec, binorm, counts, stderr,
               bispecbuf, binormbuf, countbuf):
     N = countbuf.sum()
     norm = binormbuf.sum()
     value = bispecbuf.sum()
     bispec[0, i, j], bispec[0, j, i] = value, value
     binorm[0, i, j], binorm[0, j, i] = norm, norm
-    omega_N[0, i, j], omega_N[0, j, i] = N, N
+    counts[0, i, j], counts[0, j, i] = N, N
     if stderr.size > 1:
         variance = cp.abs(bispecbuf - (value / N))**2
         err = np.sqrt(variance.sum() / (N*(N - 1)))
@@ -433,14 +444,14 @@ def _fill_sum(i, j, bispec, binorm, omega_N, stderr,
 
 
 def _fill_binned_sum(i, j, ntheta, binned, bispec, binorm,
-                     omega_N, stderr, bispecbuf, binormbuf, countbuf):
+                     counts, stderr, bispecbuf, binormbuf, countbuf):
     N = cp.bincount(binned, weights=countbuf, minlength=ntheta)
     norm = cp.bincount(binned, weights=binormbuf, minlength=ntheta)
     value = cp.bincount(binned, weights=bispecbuf.real, minlength=ntheta) +\
         1.j*cp.bincount(binned, weights=bispecbuf.imag, minlength=ntheta)
     bispec[:, i, j], bispec[:, j, i] = value, value
     binorm[:, i, j], binorm[:, j, i] = norm, norm
-    omega_N[:, i, j], omega_N[:, j, i] = N, N
+    counts[:, i, j], counts[:, j, i] = N, N
     if stderr.size > 1:
         variance = cp.zeros_like(countbuf)
         for n in range(ntheta):
@@ -485,28 +496,37 @@ __global__ void computePoint3D(long* k1ind, long* k2ind,
 
         // Map frequency domain to index domain
         short q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
+        short cj1, cj2, cj3;
+
+        if (k1z < 0) { k1x *= -1; k1y *= -1; k1z *= -1; cj1 = 1; } else { cj1 = 0; }
+        if (k2z < 0) { k2x *= -1; k2y *= -1; k2z *= -1; cj2 = 1; } else { cj2 = 0; }
+        if (k3z < 0) { k3x *= -1; k3y *= -1; k3z *= -1; cj3 = 1; } else { cj3 = 0; }
 
         if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
         if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
-        if (k1z < 0) { q1z = k1z + Nz; } else { q1z = k1z; }
+        q1z = k1z;
 
         if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
         if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
-        if (k2z < 0) { q2z = k2z + Nz; } else { q2z = k2z; }
+        q2z = k2z;
 
         if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
         if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
-        if (k3z < 0) { q3z = k3z + Nz; } else { q3z = k3z; }
+        q3z = k3z;
 
         // Map multi-dimensional indices to 1-dimensional indices
-        long idx1 = (q1x*Nz + q1y)*Ny + q1z;
-        long idx2 = (q2x*Nz + q2y)*Ny + q2z;
-        long idx3 = (q3x*Nz + q3y)*Ny + q3z;
+        long idx1 = (q1x*Ny + q1y)*Nz + q1z;
+        long idx2 = (q2x*Ny + q2y)*Nz + q2z;
+        long idx3 = (q3x*Ny + q3y)*Nz + q3z;
 
         // Sample correlation function
-        complex<double> sample;
+        complex<double> sample, s1, s2, s3;
         double mod;
-        sample = fft[idx1] * fft[idx2] * conj(fft[idx3]);
+
+        if (cj1 == 1) { s1 = conj(fft[idx1]); } else { s1 = fft[idx1]; }
+        if (cj2 == 1) { s2 = conj(fft[idx2]); } else { s2 = fft[idx2]; }
+        if (cj3 == 1) { s3 = fft[idx3]; } else { s3 = conj(fft[idx3]); }
+        sample = s1*s2*s3;
         mod = abs(sample);
 
         bispecbuf[idx] = sample;
@@ -557,15 +577,20 @@ __global__ void computePoint2D(const long* k1ind, const long* k2ind,
 
         // Map frequency domain to index domain
         short q1x, q1y, q2x, q2y, q3x, q3y;
+        short cj1, cj2, cj3;
+
+        if (k1y < 0) { k1x *= -1; k1y *= -1; cj1 = 1; } else { cj1 = 0; }
+        if (k2y < 0) { k2x *= -1; k2y *= -1; cj2 = 1; } else { cj2 = 0; }
+        if (k3y < 0) { k3x *= -1; k3y *= -1; cj3 = 1; } else { cj3 = 0; }
 
         if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
-        if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
+        q1y = k1y;
 
         if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
-        if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
+        q2y = k2y;
 
         if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
-        if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
+        q3y = k3y;
 
         // Map multi-dimensional indices to 1-dimensional indices
         long idx1 = (q1x*Ny + q1y);
@@ -573,9 +598,13 @@ __global__ void computePoint2D(const long* k1ind, const long* k2ind,
         long idx3 = (q3x*Ny + q3y);
 
         // Sample correlation function
-        complex<double> sample;
+        complex<double> sample, s1, s2, s3;
         double mod;
-        sample = fft[idx1] * fft[idx2] * conj(fft[idx3]);
+
+        if (cj1 == 1) { s1 = conj(fft[idx1]); } else { s1 = fft[idx1]; }
+        if (cj2 == 1) { s2 = conj(fft[idx2]); } else { s2 = fft[idx2]; }
+        if (cj3 == 1) { s3 = fft[idx3]; } else { s3 = conj(fft[idx3]); }
+        sample = s1*s2*s3;
         mod = abs(sample);
 
         bispecbuf[idx] = sample;
@@ -628,29 +657,53 @@ __global__ void computePointVec3D(long* k1ind, long* k2ind,
 
         // Map frequency domain to index domain
         short q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
+        short cj1, cj2, cj3;
+
+        if (k1z < 0) { k1x *= -1; k1y *= -1; k1z *= -1; cj1 = 1; } else { cj1 = 0; }
+        if (k2z < 0) { k2x *= -1; k2y *= -1; k2z *= -1; cj2 = 1; } else { cj2 = 0; }
+        if (k3z < 0) { k3x *= -1; k3y *= -1; k3z *= -1; cj3 = 1; } else { cj3 = 0; }
 
         if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
         if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
-        if (k1z < 0) { q1z = k1z + Nz; } else { q1z = k1z; }
+        q1z = k1z;
 
         if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
         if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
-        if (k2z < 0) { q2z = k2z + Nz; } else { q2z = k2z; }
+        q2z = k2z;
 
         if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
         if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
-        if (k3z < 0) { q3z = k3z + Nz; } else { q3z = k3z; }
+        q3z = k3z;
 
         // Map multi-dimensional indices to 1-dimensional indices
-        long idx1 = (q1x*Nz + q1y)*Ny + q1z;
-        long idx2 = (q2x*Nz + q2y)*Ny + q2z;
-        long idx3 = (q3x*Nz + q3y)*Ny + q3z;
+        long idx1 = (q1x*Ny + q1y)*Nz + q1z;
+        long idx2 = (q2x*Ny + q2y)*Nz + q2z;
+        long idx3 = (q3x*Ny + q3y)*Nz + q3z;
 
         // Sample correlation function
         complex<double> sx, sy, sz;
-        sx = fftx[idx1] * fftx[idx2] * conj(fftx[idx3]);
-        sy = ffty[idx1] * ffty[idx2] * conj(ffty[idx3]);
-        sz = fftz[idx1] * fftz[idx2] * conj(fftz[idx3]);
+        complex<double> s1x, s1y, s1z, s2x, s2y, s2z, s3x, s3y, s3z;
+
+        if (cj1 == 1) {
+            s1x = conj(fftx[idx1]); s1y = conj(ffty[idx1]); s1z = conj(fftz[idx1]);
+        }
+        else {
+            s1x = fftx[idx1]; s1y = ffty[idx1]; s1z = fftz[idx1];
+        }
+        if (cj2 == 1) {
+            s2x = conj(fftx[idx2]); s2y = conj(ffty[idx2]); s2z = conj(fftz[idx2]);
+        }
+        else {
+            s2x = fftx[idx2]; s2y = ffty[idx2]; s2z = fftz[idx2];
+        }
+        if (cj3 == 1) {
+            s3x = fftx[idx3]; s3y = ffty[idx3]; s3z = fftz[idx3];
+        }
+        else {
+            s3x = conj(fftx[idx3]); s3y = conj(ffty[idx3]); s3z = conj(fftz[idx3]);
+        }
+
+        sx = s1x*s2x*s3x; sy = s1y*s2y*s3y; sz = s1z*s2z*s3z;
 
         bispecbuf[idx] = sx + sy + sz;
         binormbuf[idx] = abs(sx) + abs(sy) + abs(sz);
@@ -701,15 +754,20 @@ __global__ void computePointVec2D(const long* k1ind, const long* k2ind,
 
         // Map frequency domain to index domain
         short q1x, q1y, q2x, q2y, q3x, q3y;
+        short cj1, cj2, cj3;
+
+        if (k1y < 0) { k1x *= -1; k1y *= -1; cj1 = 1; } else { cj1 = 0; }
+        if (k2y < 0) { k2x *= -1; k2y *= -1; cj2 = 1; } else { cj2 = 0; }
+        if (k3y < 0) { k3x *= -1; k3y *= -1; cj3 = 1; } else { cj3 = 0; }
 
         if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
-        if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
+        q1y = k1y;
 
         if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
-        if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
+        q2y = k2y;
 
         if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
-        if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
+        q3y = k3y;
 
         // Map multi-dimensional indices to 1-dimensional indices
         long idx1 = (q1x*Ny + q1y);
@@ -718,8 +776,28 @@ __global__ void computePointVec2D(const long* k1ind, const long* k2ind,
 
         // Sample correlation function
         complex<double> sx, sy;
-        sx = fftx[idx1] * fftx[idx2] * conj(fftx[idx3]);
-        sy = ffty[idx1] * ffty[idx2] * conj(ffty[idx3]);
+        complex<double> s1x, s1y, s2x, s2y, s3x, s3y;
+
+        if (cj1 == 1) {
+            s1x = conj(fftx[idx1]); s1y = conj(ffty[idx1]);
+        }
+        else {
+            s1x = fftx[idx1]; s1y = ffty[idx1];
+        }
+        if (cj2 == 1) {
+            s2x = conj(fftx[idx2]); s2y = conj(ffty[idx2]);
+        }
+        else {
+            s2x = fftx[idx2]; s2y = ffty[idx2];
+        }
+        if (cj3 == 1) {
+            s3x = fftx[idx3]; s3y = ffty[idx3];
+        }
+        else {
+            s3x = conj(fftx[idx3]); s3y = conj(ffty[idx3]);
+        }
+
+        sx = s1x*s2x*s3x; sy = s1y*s2y*s3y;
 
         bispecbuf[idx] = sx + sy;
         binormbuf[idx] = abs(sx) + abs(sy);
@@ -769,28 +847,37 @@ __global__ void computePoint3Df(const long* k1ind, const long* k2ind,
 
         // Map frequency domain to index domain
         short q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
+        short cj1, cj2, cj3;
+
+        if (k1z < 0) { k1x *= -1; k1y *= -1; k1z *= -1; cj1 = 1; } else { cj1 = 0; }
+        if (k2z < 0) { k2x *= -1; k2y *= -1; k2z *= -1; cj2 = 1; } else { cj2 = 0; }
+        if (k3z < 0) { k3x *= -1; k3y *= -1; k3z *= -1; cj3 = 1; } else { cj3 = 0; }
 
         if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
         if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
-        if (k1z < 0) { q1z = k1z + Nz; } else { q1z = k1z; }
+        q1z = k1z;
 
         if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
         if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
-        if (k2z < 0) { q2z = k2z + Nz; } else { q2z = k2z; }
+        q2z = k2z;
 
         if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
         if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
-        if (k3z < 0) { q3z = k3z + Nz; } else { q3z = k3z; }
+        q3z = k3z;
 
         // Map multi-dimensional indices to 1-dimensional indices
-        long idx1 = (q1x*Nz + q1y)*Ny + q1z;
-        long idx2 = (q2x*Nz + q2y)*Ny + q2z;
-        long idx3 = (q3x*Nz + q3y)*Ny + q3z;
+        long idx1 = (q1x*Ny + q1y)*Nz + q1z;
+        long idx2 = (q2x*Ny + q2y)*Nz + q2z;
+        long idx3 = (q3x*Ny + q3y)*Nz + q3z;
 
         // Sample correlation function
-        complex<float> sample;
+        complex<float> sample, s1, s2, s3;
         float mod;
-        sample = fft[idx1] * fft[idx2] * conj(fft[idx3]);
+
+        if (cj1 == 1) { s1 = conj(fft[idx1]); } else { s1 = fft[idx1]; }
+        if (cj2 == 1) { s2 = conj(fft[idx2]); } else { s2 = fft[idx2]; }
+        if (cj3 == 1) { s3 = fft[idx3]; } else { s3 = conj(fft[idx3]); }
+        sample = s1*s2*s3;
         mod = abs(sample);
 
         bispecbuf[idx] = sample;
@@ -840,15 +927,20 @@ __global__ void computePoint2Df(const long* k1ind, const long* k2ind,
 
         // Map frequency domain to index domain
         short q1x, q1y, q2x, q2y, q3x, q3y;
+        short cj1, cj2, cj3;
+
+        if (k1y < 0) { k1x *= -1; k1y *= -1; cj1 = 1; } else { cj1 = 0; }
+        if (k2y < 0) { k2x *= -1; k2y *= -1; cj2 = 1; } else { cj2 = 0; }
+        if (k3y < 0) { k3x *= -1; k3y *= -1; cj3 = 1; } else { cj3 = 0; }
 
         if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
-        if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
+        q1y = k1y;
 
         if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
-        if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
+        q2y = k2y;
 
         if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
-        if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
+        q3y = k3y;
 
         // Map multi-dimensional indices to 1-dimensional indices
         long idx1 = (q1x*Ny + q1y);
@@ -856,9 +948,13 @@ __global__ void computePoint2Df(const long* k1ind, const long* k2ind,
         long idx3 = (q3x*Ny + q3y);
 
         // Sample correlation function
-        complex<float> sample;
-        float mod;
-        sample = fft[idx1] * fft[idx2] * conj(fft[idx3]);
+        complex<double> sample, s1, s2, s3;
+        double mod;
+
+        if (cj1 == 1) { s1 = conj(fft[idx1]); } else { s1 = fft[idx1]; }
+        if (cj2 == 1) { s2 = conj(fft[idx2]); } else { s2 = fft[idx2]; }
+        if (cj3 == 1) { s3 = fft[idx3]; } else { s3 = conj(fft[idx3]); }
+        sample = s1*s2*s3;
         mod = abs(sample);
 
         bispecbuf[idx] = sample;
@@ -911,29 +1007,54 @@ __global__ void computePointVec3Df(const long* k1ind, const long* k2ind,
 
         // Map frequency domain to index domain
         short q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
+        short cj1, cj2, cj3;
+
+        if (k1z < 0) { k1x *= -1; k1y *= -1; k1z *= -1; cj1 = 1; } else { cj1 = 0; }
+        if (k2z < 0) { k2x *= -1; k2y *= -1; k2z *= -1; cj2 = 1; } else { cj2 = 0; }
+        if (k3z < 0) { k3x *= -1; k3y *= -1; k3z *= -1; cj3 = 1; } else { cj3 = 0; }
 
         if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
         if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
-        if (k1z < 0) { q1z = k1z + Nz; } else { q1z = k1z; }
+        q1z = k1z;
 
         if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
         if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
-        if (k2z < 0) { q2z = k2z + Nz; } else { q2z = k2z; }
+        q2z = k2z;
 
         if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
         if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
-        if (k3z < 0) { q3z = k3z + Nz; } else { q3z = k3z; }
+        q3z = k3z;
 
         // Map multi-dimensional indices to 1-dimensional indices
-        long idx1 = (q1x*Nz + q1y)*Ny + q1z;
-        long idx2 = (q2x*Nz + q2y)*Ny + q2z;
-        long idx3 = (q3x*Nz + q3y)*Ny + q3z;
+        long idx1 = (q1x*Ny + q1y)*Nz + q1z;
+        long idx2 = (q2x*Ny + q2y)*Nz + q2z;
+        long idx3 = (q3x*Ny + q3y)*Nz + q3z;
 
         // Sample correlation function
         complex<float> sx, sy, sz;
-        sx = fftx[idx1] * fftx[idx2] * conj(fftx[idx3]);
-        sy = ffty[idx1] * ffty[idx2] * conj(ffty[idx3]);
-        sz = fftz[idx1] * fftz[idx2] * conj(fftz[idx3]);
+        complex<float> s1x, s1y, s1z, s2x, s2y, s2z, s3x, s3y, s3z;
+
+        if (cj1 == 1) {
+            s1x = conj(fftx[idx1]); s1y = conj(ffty[idx1]); s1z = conj(fftz[idx1]);
+        }
+        else {
+            s1x = fftx[idx1]; s1y = ffty[idx1]; s1z = fftz[idx1];
+        }
+        if (cj2 == 1) {
+            s2x = conj(fftx[idx2]); s2y = conj(ffty[idx2]); s2z = conj(fftz[idx2]);
+        }
+        else {
+            s2x = fftx[idx2]; s2y = ffty[idx2]; s2z = fftz[idx2];
+        }
+        if (cj3 == 1) {
+            s3x = fftx[idx3]; s3y = ffty[idx3]; s3z = fftz[idx3];
+        }
+        else {
+            s3x = conj(fftx[idx3]); s3y = conj(ffty[idx3]); s3z = conj(fftz[idx3]);
+        }
+
+        sx = s1x*s2x*s3x; sy = s1y*s2y*s3y; sz = s1z*s2z*s3z;
+
 
         bispecbuf[idx] = sx + sy + sz;
         binormbuf[idx] = abs(sx) + abs(sy) + abs(sz);
@@ -983,15 +1104,20 @@ __global__ void computePointVec2Df(const long* k1ind, const long* k2ind,
 
         // Map frequency domain to index domain
         short q1x, q1y, q2x, q2y, q3x, q3y;
+        short cj1, cj2, cj3;
+
+        if (k1y < 0) { k1x *= -1; k1y *= -1; cj1 = 1; } else { cj1 = 0; }
+        if (k2y < 0) { k2x *= -1; k2y *= -1; cj2 = 1; } else { cj2 = 0; }
+        if (k3y < 0) { k3x *= -1; k3y *= -1; cj3 = 1; } else { cj3 = 0; }
 
         if (k1x < 0) { q1x = k1x + Nx; } else { q1x = k1x; }
-        if (k1y < 0) { q1y = k1y + Ny; } else { q1y = k1y; }
+        q1y = k1y;
 
         if (k2x < 0) { q2x = k2x + Nx; } else { q2x = k2x; }
-        if (k2y < 0) { q2y = k2y + Ny; } else { q2y = k2y; }
+        q2y = k2y;
 
         if (k3x < 0) { q3x = k3x + Nx; } else { q3x = k3x; }
-        if (k3y < 0) { q3y = k3y + Ny; } else { q3y = k3y; }
+        q3y = k3y;
 
         // Map multi-dimensional indices to 1-dimensional indices
         long idx1 = (q1x*Ny + q1y);
@@ -1000,8 +1126,28 @@ __global__ void computePointVec2Df(const long* k1ind, const long* k2ind,
 
         // Sample correlation function
         complex<float> sx, sy;
-        sx = fftx[idx1] * fftx[idx2] * conj(fftx[idx3]);
-        sy = ffty[idx1] * ffty[idx2] * conj(ffty[idx3]);
+        complex<float> s1x, s1y, s2x, s2y, s3x, s3y;
+
+        if (cj1 == 1) {
+            s1x = conj(fftx[idx1]); s1y = conj(ffty[idx1]);
+        }
+        else {
+            s1x = fftx[idx1]; s1y = ffty[idx1];
+        }
+        if (cj2 == 1) {
+            s2x = conj(fftx[idx2]); s2y = conj(ffty[idx2]);
+        }
+        else {
+            s2x = fftx[idx2]; s2y = ffty[idx2];
+        }
+        if (cj3 == 1) {
+            s3x = fftx[idx3]; s3y = ffty[idx3];
+        }
+        else {
+            s3x = conj(fftx[idx3]); s3y = conj(ffty[idx3]);
+        }
+
+        sx = s1x*s2x*s3x; sy = s1y*s2y*s3y;
 
         bispecbuf[idx] = sx + sy;
         binormbuf[idx] = abs(sx) + abs(sy);
@@ -1048,25 +1194,24 @@ if __name__ == '__main__':
 
     N = 100
     np.random.seed(1234)
-    data = np.random.normal(size=N**2).reshape((N, N))
-    data = (data - data.mean()) / data.mean()
+    data = np.random.normal(size=N*(N+2)*(N+4)).reshape((N, N+2, N+4))+1
 
-    kmin, kmax = 1, 50
-    result = bispectrum(data, data, nsamples=int(1e4), kmin=kmin, kmax=kmax,
-                        ntheta=9, progress=True, diagnostics=True, bench=True)
-    bispec, bicoh, kn, theta, stderr, omega_N, omega = result
+    kmin, kmax = 1, 20
+    result = bispectrum(data, kmin=kmin, kmax=kmax,
+                        ntheta=1, double=True, progress=True, error=True, bench=True)
+    bispec, bicoh, kn, theta, counts, omega, stderr = result
 
-    print(np.nansum(bispec))#, np.nansum(bicoh))
+    print(np.mean(bispec), np.mean(bicoh))
 
     tidx = 0
-    bispec, bicoh, omega_N, stderr = [x[tidx] for x in [bispec, bicoh, omega_N, stderr]]
+    bispec, bicoh, counts, stderr = [x[tidx] for x in [bispec, bicoh, counts, stderr]]
 
     # Plot
     cmap = 'plasma'
     labels = [r"$|B(k_1, k_2)|$", "$b(k_1, k_2)$",
               "$arg \ B(k_1, k_2)$", "std error"]#, "counts"]
     data = [np.log10(np.abs(bispec)), np.log10(bicoh),
-            np.angle(bispec), np.log10(stderr)]#, np.log10(omega_N)]
+            np.angle(bispec), np.log10(stderr)]#, np.log10(counts)]
     fig, axes = plt.subplots(ncols=2, nrows=2)
     for i in range(len(data)):
         ax = axes.flat[i]
@@ -1086,3 +1231,4 @@ if __name__ == '__main__':
     plt.tight_layout()
 
     plt.show()
+    fig.savefig("gputest.png")
