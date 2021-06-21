@@ -86,13 +86,13 @@ def powerspectrum(*U, average=True, diagnostics=False,
         Radially averaged power spectrum :math:`P(k)`.
     kn : `np.ndarray`, shape `(npts,)`
         Left edges of radial bins :math:`k`.
+    counts : `np.ndarray`, shape `(npts,)`, optional
+        Number of points :math:`N_k` in each bin.
+    vol : `np.ndarray`, shape `(npts,)`, optional
+        Volume :math:`V_k` of each bin.
     stdev : `np.ndarray`, shape `(npts,)`, optional
         Standard deviation multiplied with :math:`V_k`
         in each bin.
-    vol : `np.ndarray`, shape `(npts,)`, optional
-        Volume :math:`V_k` of each bin.
-    counts : `np.ndarray`, shape `(npts,)`, optional
-        Number of points :math:`N_k` in each bin.
     """
     if bench:
         t0 = time()
@@ -186,7 +186,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
 
     result = [spectrum, kn]
     if diagnostics:
-        result.extend([stdev, vol, counts])
+        result.extend([counts, vol, stdev])
 
     return tuple(result)
 
