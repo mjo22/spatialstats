@@ -9,13 +9,13 @@ import numpy as np
 from time import time
 
 
-def powerspectrum(*U, average=True, diagnostics=False,
+def powerspectrum(*u, average=True, diagnostics=False,
                   kmin=None, kmax=None, npts=None,
                   compute_fft=True, compute_sqr=True,
                   use_pyfftw=False, bench=False, **kwargs):
     """
     Returns the isotropically averaged power spectrum :math:`P(k)`
-    of a real scalar or vector field :math:`U`. Assuming statistical
+    of a real scalar or vector field :math:`u`. Assuming statistical
     homogeneity, the power spectrum is the
     2-point correlation function in Fourier space with
     :math:`\mathbf{k} + \mathbf{k}' = 0`. We define this isotropically
@@ -23,27 +23,27 @@ def powerspectrum(*U, average=True, diagnostics=False,
 
     .. math::
         P(k) = \int\limits_{|\mathbf{k}| \in [k, \ k+\Delta k)} 
-                   d^D \mathbf{k} \ |\hat{U}(\mathbf{k})|^2,
+                   d^D \mathbf{k} \ |\\tilde{u}(\mathbf{k})|^2,
 
-    where :math:`\hat{U}` is the FFT of :math:`U`.
+    where :math:`\\tilde{u}` is the FFT of :math:`u`.
 
     We approximate this integral as
 
     .. math::
         P(k) = \\frac{V_k}{N_k} \sum\limits_{|\mathbf{k}| \in [k, k+\Delta k)}
-                   |\hat{U}(\mathbf{k})|^2,
+                   |\\tilde{u}(\mathbf{k})|^2,
 
     where :math:`V_k` and :math:`N_k` are the volume and number of points
     in the :math:`k^{th}` bin.
 
     Parameters
     ----------
-    U : `np.ndarray`
+    u : `np.ndarray`
         Scalar or vector field.
-        If passing vector data, pass arguments as ``U1, U2, ..., Un``
-        where ``Ui`` is the ith vector component.
-        Each ``Ui`` can be 1D, 2D, or 3D, and all must have the
-        same ``Ui.shape`` and ``Ui.dtype``.
+        If passing vector data, pass arguments as ``u1, u2, ..., un``
+        where ``ui`` is the ith vector component.
+        Each ``ui`` can be 1D, 2D, or 3D, and all must have the
+        same ``ui.shape`` and ``ui.dtype``.
     average : `bool`, optional
         If ``True``, average over values in a given
         bin and multiply by the bin volume.
@@ -56,7 +56,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
         If ``None``, ``kmin = 1``.
     kmax : `int` or `float`, optional
         Maximum wavenumber in power spectrum bins.
-        If ``None``, ``kmax = max(U.shape)//2``.
+        If ``None``, ``kmax = max(u.shape)//2``.
     npts : `int`, optional
         Number of modes between ``kmin`` and ``kmax``,
         inclusive.
@@ -97,11 +97,11 @@ def powerspectrum(*U, average=True, diagnostics=False,
     if bench:
         t0 = time()
 
-    ndim = U[0].ndim
-    ncomp = len(U)
-    N = max(U[0].shape)
+    ndim = u[0].ndim
+    ncomp = len(u)
+    N = max(u[0].shape)
 
-    real = True if np.issubdtype(U[0].dtype, np.floating) else False
+    real = True if np.issubdtype(u[0].dtype, np.floating) else False
 
     if ndim not in [1, 2, 3]:
         raise ValueError("Dimension of image must be 1, 2, or 3.")
@@ -109,7 +109,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
     # Compute FFT
     density = None
     for i in range(ncomp):
-        comp = U[i]
+        comp = u[i]
         if compute_fft:
             # Compute fft of a component
             if use_pyfftw:

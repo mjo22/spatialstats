@@ -11,7 +11,7 @@ import cupy as cp
 from cupyx.scipy import fft as cufft
 
 
-def powerspectrum(*U, average=True, diagnostics=False,
+def powerspectrum(*u, average=True, diagnostics=False,
                   kmin=None, kmax=None, npts=None,
                   compute_fft=True, compute_sqr=True,
                   double=True, bench=False, **kwargs):
@@ -20,12 +20,12 @@ def powerspectrum(*U, average=True, diagnostics=False,
 
     Parameters
     ----------
-    U : `np.ndarray`
+    u : `np.ndarray`
         Scalar or vector field.
-        If vector data, pass arguments as ``U1, U2, ..., Un``
-        where ``Ui`` is the ith vector component.
-        Each ``Ui`` can be 1D, 2D, or 3D, and all must have the
-        same ``Ui.shape`` and ``Ui.dtype``.
+        If vector data, pass arguments as ``u1, u2, ..., un``
+        where ``ui`` is the ith vector component.
+        Each ``ui`` can be 1D, 2D, or 3D, and all must have the
+        same ``ui.shape`` and ``ui.dtype``.
     average : `bool`, optional
         If ``True``, average over values in a given
         bin and multiply by the bin volume.
@@ -38,7 +38,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
         If ``None``, ``kmin = 1``.
     kmax : `int` or `float`, optional
         Maximum wavenumber in power spectrum bins.
-        If ``None``, ``kmax = max(U.shape)//2``.
+        If ``None``, ``kmax = max(u.shape)//2``.
     npts : `int`, optional
         Number of modes between ``kmin`` and ``kmax``,
         inclusive.
@@ -78,12 +78,12 @@ def powerspectrum(*U, average=True, diagnostics=False,
     if bench:
         t0 = time()
 
-    shape = U[0].shape
-    ndim = U[0].ndim
-    ncomp = len(U)
-    N = max(U[0].shape)
+    shape = u[0].shape
+    ndim = u[0].ndim
+    ncomp = len(u)
+    N = max(u[0].shape)
 
-    if np.issubdtype(U[0].dtype, np.floating):
+    if np.issubdtype(u[0].dtype, np.floating):
         real = True
         dtype = cp.float64 if double else cp.float32
     else:
@@ -101,7 +101,7 @@ def powerspectrum(*U, average=True, diagnostics=False,
     density = None
     comp = cp.empty(shape, dtype=dtype)
     for i in range(ncomp):
-        temp = cp.asarray(U[i], dtype=dtype)
+        temp = cp.asarray(u[i], dtype=dtype)
         comp[...] = temp
         del temp
         if compute_fft:
