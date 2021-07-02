@@ -130,7 +130,7 @@ def rdf(points, boxsize, rmin=None, rmax=None, npts=100, bench=False):
         Radius :math:`r`.
     """
     N, ndim = points.shape
-    rmax = min(boxsize)/2 if rmax is None else rmax
+    rmax = max(boxsize)/2 if rmax is None else rmax
     boxsize = np.array(boxsize)
 
     if ndim not in [2, 3]:

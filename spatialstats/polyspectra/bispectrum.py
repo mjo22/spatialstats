@@ -67,7 +67,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     If the data is also statistically isotropic, then we can say that
     the bispectrum is only a function of scalar wavenumber,
     :math:`B = B(k_1, k_2, k_3)`. In this case, :math:`B` accounts
-    for all degrees of freedom of the bispectrum. use this implementation's
+    for all degrees of freedom of the bispectrum. Use this implementation's
     variance estimates on the average over :math:`\\Omega`
     to test this assumption.
 
