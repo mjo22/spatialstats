@@ -1,6 +1,7 @@
 """
-Routines to calculate the radial distribution function :math:`g(r)`
-and isotropic structure factor :math:`S(q)`.
+Routines to calculate the radial distribution functions for point
+and rod-like particles. For point-like particles, compute the
+usual :math:`g(r)` and isotropic structure factor :math:`S(q)`.
 
 See `here <https://en.wikipedia.org/wiki/Radial_distribution_function>`_
 to learn more.
@@ -43,10 +44,10 @@ def structure_factor(gr, r, N, boxsize, q=None, **kwargs):
     ----------
     gr : `np.ndarray`
         The radial distribution function :math:`g(r)`
-        from :ref:`spatialstats.points.rdf<rdf>`.
+        from :ref:`spatialstats.particles.rdf<rdf>`.
     r : `np.ndarray`
         The domain of :math:`g(r)`
-        from :ref:`spatialstats.points.rdf<rdf>`.
+        from :ref:`spatialstats.particles.rdf<rdf>`.
     N : `int`
         The number of particles :math:`N`.
     boxsize : `list` of `float`
@@ -94,23 +95,33 @@ def structure_factor(gr, r, N, boxsize, q=None, **kwargs):
     return Sq, q
 
 
-def rdf(points, boxsize, rmin=None, rmax=None, npts=100, bench=False):
+def rdf(positions, boxsize, orientations=None,
+        rmin=None, rmax=None, nr=100, nphi=None, bench=False):
     """
     .. _rdf:
 
-    Calculate the radial distribution function :math:`g(r)`
-    for a set of :math:`N` particle positions in a 2D or 3D periodic box.
+    Calculate the radial distribution function :math:`g(r, \\phi)`
+    for a set of :math:`N` center of mass particle positions
+    :math:`\\mathbf{r}` with orientations :math:`\\mathbf{p}`
+    in a 2D or 3D periodic box.
+
+    Reduces to the 1D distribution function :math:`g(r)`
+    when orientations are not included.
 
     Parameters
     ---------
-    points : `np.ndarray`, shape `(N, ndim)`
-        Particle positions in ``ndim`` dimensions
-        and ``N`` particles. Passed to
-        ``scipy.spatial.cKDTree``.
+    particles : `np.ndarray`, shape `(N, ndim)`
+        Particle positions :math:`\\mathbf{r}`
+        in ``ndim`` dimensions for ``N`` particles.
+        Passed to ``scipy.spatial.cKDTree``.
     boxsize : `list` of `float`
         The rectangular domain over which
         to apply periodic boundary conditions.
         Passed to ``scipy.spatial.cKDTree``.
+    orientations : `np.ndarray`, shape `(N, ndim)`
+        Particle orientation vectors :math:`\\mathbf{p}`.
+        Vectors should be unitary, but they will be
+        normalized automatically.
     rmin : `float`, optional
         Minimum :math:`r` value in :math:`g(r)`.
     rmax : `float`, optional
@@ -118,18 +129,23 @@ def rdf(points, boxsize, rmin=None, rmax=None, npts=100, bench=False):
         maximum :math:`r` value in :math:`g(r)`.
         Default is maximum distance between any pair of
         particles.
-    npts : `int`, optional
-        Number points in domain :math:`r`.
+    nr : `int`, optional
+        Number of points to bin in :math:`r`.
+    nphi : `int`, optional
+        Number of points to bin in :math:`\\phi`
     bench : `bool`, optional
         Print message for time of calculation.
     Returns
     -------
-    gr : `np.ndarray`
-        Radial distribution function :math:`g(r)`.
-    r : `np.ndarray`
-        Radius :math:`r`.
+    g : `np.ndarray`, shape `(nr,)` or `(nr, nphi)`
+        Radial distribution function :math:`g(r)`
+        or :math:`g(r, \\phi)`.
+    r : `np.ndarray`, shape `(nr,)`
+        Radial bins :math:`r`.
+    phi : `np.ndarray`, shape `(nphi,)`, optional
+        Angular bins :math:`\\phi`
     """
-    N, ndim = points.shape
+    N, ndim = positions.shape
     rmax = max(boxsize)/2 if rmax is None else rmax
     boxsize = np.array(boxsize)
 
@@ -140,20 +156,20 @@ def rdf(points, boxsize, rmin=None, rmax=None, npts=100, bench=False):
         t0 = time()
 
     # Periodic boundary conditions
-    _impose_pbc(points, boxsize)
+    _impose_pbc(positions, boxsize)
 
-    # Get point pairs and their displacement vectors
-    pairs = _get_pairs(points, boxsize, rmax)
-    rjk = _get_displacements(points, pairs, boxsize, rmax)
+    # Get particle pairs and their displacement vectors
+    pairs = _get_pairs(positions, boxsize, rmax)
+    rjk = _get_displacements(positions, pairs, boxsize, rmax)
 
     # Get g(r)
-    r, gr = _gen_rdf(rjk, N, N/(np.prod(boxsize)),
-                     rmin, rmax, npts)
+    r, g = _gen_rdf(rjk, N, N/(np.prod(boxsize)),
+                    rmin, rmax, nr)
 
     if bench:
         print(f"Time: {time() - t0:.04f} s")
 
-    return gr, r
+    return g, r
 
 
 def _gen_rdf(rvec, npar, density, rmin, rmax, nbins):
@@ -221,27 +237,27 @@ def _impose_pbc(coords, boxsize):
 
 
 @nb.njit(cache=True)
-def _closest_point(target, points):
-    '''Get closest points to target in 2D and 3D'''
+def _closest_point(target, positions):
+    '''Get closest positions to target in 2D and 3D'''
     target = np.array(target)
-    points = np.array(points)
+    positions = np.array(positions)
     distance = []
-    for p in points:
+    for p in positions:
         distance.append(np.linalg.norm(p-target))
     distance = np.array(distance)
     ind = np.argmin(distance)
-    return points[ind], ind
+    return positions[ind], ind
 
 
 @nb.njit(cache=True)
-def _closest_point1d(target, points):
-    '''Get closest points to target in 1D'''
+def _closest_point1d(target, positions):
+    '''Get closest positions to target in 1D'''
     distance = []
-    for p in points:
+    for p in positions:
         distance.append(np.abs(p-target))
     distance = np.array(distance)
     ind = np.argmin(distance)
-    return points[ind], ind
+    return positions[ind], ind
 
 
 @nb.njit(cache=True)
@@ -266,7 +282,7 @@ if __name__ == "__main__":
     data = np.random.rand(N, 2)*100
     rmax = boxsize[0]/4
 
-    gr, r = rdf(data, boxsize, rmax=rmax, npts=200)
+    gr, r = rdf(data, boxsize, rmax=rmax, nr=200)
 
     Sq, q = structure_factor(gr, r, N, boxsize, qmin=0, qmax=100, dq=.5)
 

@@ -1,10 +1,10 @@
-spatialstats.points
+spatialstats.particles
 ==============
 
 Radial distribution function
 ----------------------------
 
-.. automodule:: spatialstats.points.point_cloud
+.. automodule:: spatialstats.particles.particle_cloud
    :members:
    :undoc-members:
    :show-inheritance:

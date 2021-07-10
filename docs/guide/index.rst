@@ -7,5 +7,5 @@ API Reference
    :maxdepth: 1
 
    polyspectra
-   points
+   particles
    utils
