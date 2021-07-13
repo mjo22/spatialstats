@@ -1,8 +1,8 @@
 """
 Routines to calculate a spatial distribution function
 :math:`g(r, \\theta, \\phi)` for point and rod-like particles.
-For point-like particles, can reduce to the usual :math:`g(r)`
-with the corresponding isotropic structure factor :math:`S(q)`.
+Can reduce to the usual :math:`g(r)` with the corresponding isotropic
+structure factor :math:`S(q)`.
 
 See `here <https://en.wikipedia.org/wiki/Radial_distribution_function>`
 to learn more.
@@ -191,7 +191,7 @@ def sdf(positions, boxsize, orientations=None,
 
     if bench:
         t1 = time()
-        print(f"Pair counting: {t1-t0:.04f} s")
+        print(f"Counted {len(pairs)} pairs: {t1-t0:.04f} s")
 
     # Get displacements
     r, phi, theta = _get_displacements(positions, orientations, pairs,
@@ -242,10 +242,11 @@ def _get_volume(count, r, phi, theta, ndim):
     for n in nb.prange(nr):
         dr = (r[n+1]**ndim-r[n]**ndim) / ndim
         for m in range(nphi):
-            dphi = (phi[m+1] - phi[m])
+            dphi = phi[m+1] - phi[m]
             for l in range(ntheta):
-                dtheta = (np.cos(theta[l]) - np.cos(theta[l+1]))
-                vol[n, m, l] = dtheta * dphi * dr
+                vol[n, m, l] = dphi * dr
+                if ndim == 3:
+                    vol[n, m, l] *= np.cos(theta[l]) - np.cos(theta[l+1])
     return vol
 
 
@@ -355,7 +356,7 @@ if __name__ == "__main__":
 
     from matplotlib import pyplot as plt
 
-    N = 5000
+    N = 3000
     boxsize = [100, 100, 100]
     pos = np.random.rand(N, 3)*100
     orient = np.random.rand(N, 3)
@@ -363,7 +364,9 @@ if __name__ == "__main__":
 
     g, r, phi, theta = sdf(pos, boxsize, rmax=rmax,
                            orientations=orient, bench=True,
-                           nr=150, ntheta=None, nphi=100)
+                           nr=150, ntheta=100, nphi=None)
+
+    print(g.mean(), g.shape)
 
     if g.ndim == 1:
         S, q = structure_factor(g, r, N, boxsize, qmin=0, qmax=100, dq=.5)
@@ -377,9 +380,9 @@ if __name__ == "__main__":
         plt.show()
     else:
         fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
-        angle = phi
+        angle = theta
         rmesh, amesh = np.meshgrid(r, angle)
-        im = ax.contourf(amesh, rmesh, g.T, np.linspace(.95, 1.05, 100), cmap="plasma")
+        im = ax.contourf(amesh, rmesh, g.T, np.linspace(.9, 1.1, 70), cmap="plasma")
         ax.set_xlim((angle.min(), angle.max()))
         fig.colorbar(im)
         plt.show()
