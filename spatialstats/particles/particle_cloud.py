@@ -1,7 +1,8 @@
 """
-Routines to calculate spatial distribution functions for point
-and rod-like particles. For point-like particles, can reduce to
-the usual :math:`g(r)` and isotropic structure factor :math:`S(q)`.
+Routines to calculate a spatial distribution function
+:math:`g(r, \\theta, \\phi)` for point and rod-like particles.
+For point-like particles, can reduce to the usual :math:`g(r)`
+with the corresponding isotropic structure factor :math:`S(q)`.
 
 See `here <https://en.wikipedia.org/wiki/Radial_distribution_function>`
 to learn more.
@@ -13,7 +14,7 @@ Adapted from https://github.com/wenyan4work/point_cloud.
 """
 
 import numpy as np
-import scipy.spatial as ss
+import scipy.spatial as spatial
 import numba as nb
 from scipy.integrate import simps
 from scipy.special import jv
@@ -96,16 +97,18 @@ def structure_factor(gr, r, N, boxsize, q=None, **kwargs):
 
 
 def sdf(positions, boxsize, orientations=None,
-        rmin=None, rmax=None, nr=100, nphi=100, bench=False):
+        rmin=None, rmax=None, nr=100, nphi=None, ntheta=None, bench=False):
     """
     .. _sdf:
 
-    Calculate the spatial distribution function :math:`g(r, \\phi)`
+    Calculate the spatial distribution function :math:`g(r, \\phi, \\theta)`
     for a set of :math:`N` point-like or rod-like particles
-    :math:`\\mathbf{r}_i` in a 2D or 3D periodic box. :math:`r` and
-    :math:`\\phi` are defined as the usual spherical coordinates
-    for displacement vectors between particle pairs
+    :math:`\\mathbf{r}_i` in a 2D or 3D periodic box.
+    :math:`(r, \\phi, \\theta)` are the spherical coordinates for
+    displacement vectors between particle pairs
     :math:`\\mathbf{r}_{ij} = \\mathbf{r}_i - \\mathbf{r}_j`.
+    :math:`\\phi` is the azimuthal angle and :math:`\\theta` is
+    the inclination angle.
 
     If particles orientations :math:`\\mathbf{p}_i` are included,
     instead define :math:`\\phi` as the angle in the
@@ -145,13 +148,18 @@ def sdf(positions, boxsize, orientations=None,
         Print message for time of calculation.
     Returns
     -------
-    g : `np.ndarray`, shape `(nr,)` or `(nr, nphi)`
-        Radial distribution function :math:`g(r)`
-        or :math:`g(r, \\phi)`.
+    g : `np.ndarray`, shape `(nr, nphi, ntheta)`
+        Radial distribution function :math:`g(r, \\phi, \\theta)`.
+        If the user does not bin for a certain coordinate,
+        ``g`` will not be 3 dimensional (e.g. if ``nphi = None``,
+        ``g`` will be shape ``(nr, ntheta)``).
     r : `np.ndarray`, shape `(nr,)`
         Left edges of radial bins :math:`r`.
-    phi : `np.ndarray`, shape `(nphi,)`, optional
-        Left edges of angular bins :math:`\\phi`
+    phi : `np.ndarray`, shape `(nphi,)`
+        Left edges of angular bins :math:`\\phi \\in [-\\pi, \\pi)`.
+    theta : `np.ndarray`, shape `(ntheta,)`
+        Left edges of angular bins :math:`\\theta \\in [0, \\pi)`.
+        Not returned for 2D datasets.
     """
     N, ndim = positions.shape
     boxsize = np.array(boxsize)
@@ -170,63 +178,86 @@ def sdf(positions, boxsize, orientations=None,
     rmin = 0 if rmin is None else rmin
     rmax = max(boxsize)/2 if rmax is None else rmax
     nphi = 1 if nphi is None else nphi
-
-    if bench:
-        t0 = time()
+    ntheta = 1 if ntheta is None or ndim == 2 else ntheta
 
     # Periodic boundary conditions
     _impose_pbc(positions, boxsize)
 
-    # Get particle pairs and their displacement vectors
+    if bench:
+        t0 = time()
+
+    # Get particle pairs
     pairs = _get_pairs(positions, boxsize, rmax)
-    r, phi = _get_displacements(positions, orientations,
-                                pairs, boxsize, rmax, nphi)
+
+    if bench:
+        t1 = time()
+        print(f"Pair counting: {t1-t0:.04f} s")
+
+    # Get displacements
+    r, phi, theta = _get_displacements(positions, orientations, pairs,
+                                       boxsize, rmax, nr, nphi, ntheta)
+
+    if bench:
+        t2 = time()
+        print(f"Displacement calculation: {t2-t1:.04f} s")
 
     # Get g(r, phi)
     r_n = np.linspace(rmin, rmax, nr+1)
-    phi_m = np.pi*np.linspace(0, 1, nphi+1)
-    g = _get_distribution(r, phi, N, boxsize, r_n, phi_m)
+    phi_m = 2*np.pi*np.linspace(0, 1, nphi+1) - np.pi
+    theta_l = np.pi*np.linspace(0, 1, ntheta+1)
+    g = _get_distribution(r, phi, theta, N, boxsize, r_n, phi_m, theta_l)
 
-    del r, phi
+    del r, phi, theta
 
-    if bench:
-        print(f"Time: {time() - t0:.04f} s")
+    out = [g, r_n[:-1], phi_m[:-1]]
+    if ndim == 3:
+        out.append(theta_l[:-1])
 
-    return g, r_n[:-1], phi_m[:-1]
+    return out
 
 
-def _get_distribution(r, phi, N, boxsize, r_n, phi_m):
+def _get_distribution(r, phi, theta, N, boxsize, r_n, phi_m, theta_l):
     '''Generate spatial distribution function'''
+    # Prepare arguments
+    samples, bins = [], []
+    for s, b in [(r, r_n), (phi, phi_m), (theta, theta_l)]:
+        if s.size > 1:
+            samples.append(s)
+            bins.append(b)
+    # Bin
+    count, edges = np.histogramdd(samples, bins=bins)
+    # Scale with bin volume and density
     ndim = boxsize.size
     density = N/(np.prod(boxsize))
-    if phi.size == r.size:
-        # Get g(r, phi)
-        count, rbins, pbins = np.histogram2d(r, phi, bins=[r_n, phi_m])
-        fac = (phi_m[1] - phi_m[0]) / np.pi
-    else:
-        # Get g(r)
-        count, rbins = np.histogram(r, r_n)
-        fac = 1
-    # Scale with bin volume and density
-    vol = np.zeros(count.shape)
-    if ndim == 2:    # area = pi(r1^2-r0^2)
-        for i in range(r_n.size-1):
-            vol[i] = fac*np.pi*(rbins[i+1]**2-rbins[i]**2)
-    elif ndim == 3:  # area = 4pi/3(r1^3-r0^3)
-        for i in range(r_n.size-1):
-            vol[i] = fac*(4.0/3.0)*np.pi*(rbins[i+1]**3-rbins[i]**3)
+    vol = np.squeeze(_get_volume(count, r_n, phi_m, theta_l, ndim))
     g = count/(N*vol*density)
     return g
 
 
 @nb.njit(parallel=True, cache=True)
-def _get_displacements(r, p, pairs, boxsize, rmax, nphi):
+def _get_volume(count, r, phi, theta, ndim):
+    '''Get volume elements for (r, phi, theta) bins'''
+    nr, nphi, ntheta = r.size-1, phi.size-1, theta.size-1
+    vol = np.zeros((nr, nphi, ntheta))
+    for n in nb.prange(nr):
+        dr = (r[n+1]**ndim-r[n]**ndim) / ndim
+        for m in range(nphi):
+            dphi = (phi[m+1] - phi[m])
+            for l in range(ntheta):
+                dtheta = (np.cos(theta[l]) - np.cos(theta[l+1]))
+                vol[n, m, l] = dtheta * dphi * dr
+    return vol
+
+
+@nb.njit(parallel=True, cache=True)
+def _get_displacements(r, p, pairs, boxsize, rmax, nr, nphi, ntheta):
     '''Get displacements between pairs'''
-    rotate = True if nphi > 1 else False
+    rotate = True if p.shape == r.shape else False
     ndim = r.shape[-1]
     npairs = pairs.shape[0]
-    rnorm = np.zeros(npairs)
+    rnorm = np.zeros(npairs) if nr > 1 else np.array([0.])
     phi = np.zeros(npairs) if nphi > 1 else np.array([0.])
+    theta = np.zeros(npairs) if ntheta > 1 else np.array([0.])
     for index in nb.prange(npairs):
         pair = pairs[index]
         i, j = pair
@@ -246,15 +277,19 @@ def _get_displacements(r, p, pairs, boxsize, rmax, nphi):
             else:
                 R = np.array(((c, -s, 0), (s, c, 0), (0, 0, 1)))
             r_ij = R @ r_ij
-        rnorm[index] = np.linalg.norm(r_ij)
+        norm = np.linalg.norm(r_ij)
+        if nr > 1:
+            rnorm[index] = norm
         if nphi > 1:
             phi[index] = np.arctan2(r_ij[1], r_ij[0])
-    return rnorm, phi
+        if ntheta > 1:
+            theta[index] = np.arccos(r_ij[2] / norm)
+    return rnorm, phi, theta
 
 
 def _get_pairs(coords, boxsize, rmax):
     '''Get coordinate pairs within distance rmax'''
-    tree = ss.cKDTree(coords, boxsize=boxsize)
+    tree = spatial.cKDTree(coords, boxsize=boxsize)
     # Get unique pairs (i<j)
     temp = tree.query_pairs(r=rmax, output_type="ndarray")
     # Get rest of the pairs (i>=j)
@@ -262,6 +297,7 @@ def _get_pairs(coords, boxsize, rmax):
     pairs = np.zeros(shape=(2*npairs, 2), dtype=np.int)
     pairs[:npairs, :] = temp
     pairs[npairs:, :] = temp[:, [1, 0]]
+    del tree, temp
     return pairs
 
 
@@ -319,15 +355,15 @@ if __name__ == "__main__":
 
     from matplotlib import pyplot as plt
 
-    N = 2000
-    boxsize = [100, 100]
-    pos = np.random.rand(N, 2)*100
-    orient = np.ones((N, 2))
-    rmax = boxsize[0]/8
+    N = 5000
+    boxsize = [100, 100, 100]
+    pos = np.random.rand(N, 3)*100
+    orient = np.random.rand(N, 3)
+    rmax = 50
 
-    g, r, phi = sdf(pos, boxsize, rmax=rmax,
-                    orientations=orient,
-                    nr=150, nphi=None)
+    g, r, phi, theta = sdf(pos, boxsize, rmax=rmax,
+                           orientations=orient, bench=True,
+                           nr=150, ntheta=None, nphi=100)
 
     if g.ndim == 1:
         S, q = structure_factor(g, r, N, boxsize, qmin=0, qmax=100, dq=.5)
@@ -340,6 +376,10 @@ if __name__ == "__main__":
         axes[1].set_ylabel("$S(q)$")
         plt.show()
     else:
-        fig, ax = plt.subplots()
-        ax.imshow(g, origin="lower")
+        fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+        angle = phi
+        rmesh, amesh = np.meshgrid(r, angle)
+        im = ax.contourf(amesh, rmesh, g.T, np.linspace(.95, 1.05, 100), cmap="plasma")
+        ax.set_xlim((angle.min(), angle.max()))
+        fig.colorbar(im)
         plt.show()
