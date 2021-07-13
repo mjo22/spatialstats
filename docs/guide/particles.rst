@@ -1,7 +1,7 @@
 spatialstats.particles
 ==============
 
-Radial distribution function
+Spatial distribution functions
 ----------------------------
 
 .. automodule:: spatialstats.particles.particle_cloud

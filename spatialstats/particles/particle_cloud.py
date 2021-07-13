@@ -1,10 +1,10 @@
 """
 Routines to calculate a spatial distribution function
-:math:`g(r, \\theta, \\phi)` for point and rod-like particles.
+:math:`g(r, \\phi, \\theta)` for point and rod-like particles.
 Can reduce to the usual :math:`g(r)` with the corresponding isotropic
 structure factor :math:`S(q)`.
 
-See `here <https://en.wikipedia.org/wiki/Radial_distribution_function>`
+See `here<https://en.wikipedia.org/wiki/Radial_distribution_function>`
 to learn more.
 
 Adapted from https://github.com/wenyan4work/point_cloud.
@@ -134,16 +134,18 @@ def sdf(positions, boxsize, orientations=None,
         Vectors should be unitary, but they will be
         normalized automatically.
     rmin : `float`, optional
-        Minimum :math:`r` value in :math:`g(r, \\phi)`.
+        Minimum :math:`r` value in :math:`g(r, \\phi, \\theta)`.
     rmax : `float`, optional
         Cutoff radius for KDTree search and
-        maximum :math:`r` value in :math:`g(r, \\phi)`.
+        maximum :math:`r` value in :math:`g(r, \\phi, \\theta)`.
         Default is maximum distance between any pair of
         particles.
     nr : `int`, optional
         Number of points to bin in :math:`r`.
     nphi : `int`, optional
         Number of points to bin in :math:`\\phi`
+    ntheta : `int`, optional
+        Number of points to bin in :math:`\\theta`
     bench : `bool`, optional
         Print message for time of calculation.
     Returns
