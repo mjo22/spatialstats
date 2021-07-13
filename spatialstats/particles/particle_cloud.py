@@ -4,7 +4,7 @@ Routines to calculate a spatial distribution function
 Can reduce to the usual :math:`g(r)` with the corresponding isotropic
 structure factor :math:`S(q)`.
 
-See `here<https://en.wikipedia.org/wiki/Radial_distribution_function>`
+See `here<https://en.wikipedia.org/wiki/Radial_distribution_function>_`
 to learn more.
 
 Adapted from https://github.com/wenyan4work/point_cloud.
@@ -101,7 +101,8 @@ def sdf(positions, boxsize, orientations=None,
     """
     .. _sdf:
 
-    Calculate the spatial distribution function :math:`g(r, \\phi, \\theta)`
+    Calculate the spatial distribution function
+    :math:`g(r, \\phi)` or :math:`g(r, \\phi, \\theta)`
     for a set of :math:`N` point-like or rod-like particles
     :math:`\\mathbf{r}_i` in a 2D or 3D periodic box.
     :math:`(r, \\phi, \\theta)` are the spherical coordinates for
@@ -113,17 +114,17 @@ def sdf(positions, boxsize, orientations=None,
     If particles orientations :math:`\\mathbf{p}_i` are included,
     instead define :math:`\\phi` as the angle in the
     coordinate system with :math:`\\mathbf{p}_i` pointed in the
-    :math:`+z` direction.
+    :math:`+y` direction in 2D or :math:`+z` direction in 3D.
 
     .. note::
         Reduces to the 1D distribution function :math:`g(r)`
-        when ``nphi = None``.
+        when ``nphi = None`` and ``ntheta = None``.
 
     Parameters
     ---------
     positions : `np.ndarray`, shape `(N, ndim)`
         Particle positions :math:`\\mathbf{r}_i`
-        in ``ndim`` dimensions for ``N`` particles.
+        in 2D or 3D for :math:`N` particles.
         Passed to ``scipy.spatial.cKDTree``.
     boxsize : `list` of `float`
         The rectangular domain over which
@@ -138,8 +139,7 @@ def sdf(positions, boxsize, orientations=None,
     rmax : `float`, optional
         Cutoff radius for KDTree search and
         maximum :math:`r` value in :math:`g(r, \\phi, \\theta)`.
-        Default is maximum distance between any pair of
-        particles.
+        Default is half the maximum dimension of ``boxsize``.
     nr : `int`, optional
         Number of points to bin in :math:`r`.
     nphi : `int`, optional
