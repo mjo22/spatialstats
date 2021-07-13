@@ -1,10 +1,11 @@
 """
-Routines to calculate a spatial distribution function
-:math:`g(r, \\phi, \\theta)` for point and rod-like particles.
-Can reduce to the usual :math:`g(r)` with the corresponding isotropic
-structure factor :math:`S(q)`.
+Routines to calculate the 2-point spatial distribution function
+:math:`g(\\mathbf{r})` for displacements between point and
+rod-like particle pairs.
+Can reduce to the usual isotropic :math:`g(r)` with the
+corresponding structure factor :math:`S(q)`.
 
-See `here<https://en.wikipedia.org/wiki/Radial_distribution_function>_`
+See `here<https://en.wikipedia.org/wiki/Radial_distribution_function>`_
 to learn more.
 
 Adapted from https://github.com/wenyan4work/point_cloud.
