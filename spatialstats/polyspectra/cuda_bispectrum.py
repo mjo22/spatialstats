@@ -92,7 +92,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
         Left edges of angular bins :math:`\\theta`, ranging from
         :math:`[0, \ \\pi)`.
     counts : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
-        Number of evaluations in the bispectrum sum, :math:`|\\Omega_N|`.
+        Number of evaluations in the bispectrum sum, :math:`N`.
     omega : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
         Number of possible triangles in the sample space, :math:`|\\Omega|`.
         This is implemented for if sampling were *not* restricted by the Nyquist
@@ -1231,4 +1231,3 @@ if __name__ == '__main__':
     plt.tight_layout()
 
     plt.show()
-    fig.savefig("gputest.png")
