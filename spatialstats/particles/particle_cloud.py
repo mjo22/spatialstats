@@ -5,7 +5,7 @@ rod-like particle pairs.
 Can reduce to the usual isotropic :math:`g(r)` with the
 corresponding structure factor :math:`S(q)`.
 
-See `here<https://en.wikipedia.org/wiki/Radial_distribution_function>`_
+See `here <https://en.wikipedia.org/wiki/Radial_distribution_function>`_
 to learn more.
 
 Adapted from https://github.com/wenyan4work/point_cloud.
@@ -113,7 +113,7 @@ def sdf(positions, boxsize, orientations=None,
     the inclination angle.
 
     If particles orientations :math:`\\mathbf{p}_i` are included,
-    instead define :math:`\\phi` as the angle in the
+    instead define :math:`(r, \\phi, \\theta)` as the
     coordinate system with :math:`\\mathbf{p}_i` pointed in the
     :math:`+z` direction.
 
@@ -180,8 +180,13 @@ def sdf(positions, boxsize, orientations=None,
     # Binning keyword args
     rmin = 0 if rmin is None else rmin
     rmax = max(boxsize)/2 if rmax is None else rmax
-    nphi = 1 if nphi is None else nphi
-    ntheta = 1 if ntheta is None or ndim == 2 else ntheta
+    nr = 1 if nr is None or nr < 1 else nr
+    nphi = 1 if nphi is None or nphi < 1 else nphi
+    ntheta = 1 if ntheta is None or ntheta < 1 or ndim == 2 else ntheta
+    ncoords = 0
+    for n in [nr, nphi, ntheta]:
+        if n > 1:
+            ncoords += 1
 
     # Periodic boundary conditions
     _impose_pbc(positions, boxsize)
@@ -197,8 +202,10 @@ def sdf(positions, boxsize, orientations=None,
         print(f"Counted {len(pairs)} pairs: {t1-t0:.04f} s")
 
     # Get displacements
-    r, phi, theta = _get_displacements(positions, orientations, pairs,
-                                       boxsize, rmax, nr, nphi, ntheta)
+    npairs = len(pairs)
+    rvec = np.zeros((npairs, ncoords))
+    _get_displacements(positions, orientations, pairs, boxsize,
+                       rmax, nr, nphi, ntheta, rvec)
 
     if bench:
         t2 = time()
@@ -208,27 +215,26 @@ def sdf(positions, boxsize, orientations=None,
     r_n = np.linspace(rmin, rmax, nr+1)
     phi_m = 2*np.pi*np.linspace(0, 1, nphi+1) - np.pi
     theta_l = np.pi*np.linspace(0, 1, ntheta+1)
-    g = _get_distribution(r, phi, theta, N, boxsize, r_n, phi_m, theta_l)
+    g = _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l)
 
-    del r, phi, theta
+    del rvec
 
     out = [g, r_n[:-1], phi_m[:-1]]
     if ndim == 3:
         out.append(theta_l[:-1])
 
-    return out
+    return tuple(out)
 
 
-def _get_distribution(r, phi, theta, N, boxsize, r_n, phi_m, theta_l):
+def _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l):
     '''Generate spatial distribution function'''
     # Prepare arguments
-    samples, bins = [], []
-    for s, b in [(r, r_n), (phi, phi_m), (theta, theta_l)]:
-        if s.size > 1:
-            samples.append(s)
+    bins = []
+    for b in [r_n, phi_m, theta_l]:
+        if b.size > 2:
             bins.append(b)
     # Bin
-    count, edges = np.histogramdd(samples, bins=bins)
+    count, edges = np.histogramdd(rvec, bins=bins)
     # Scale with bin volume and density
     ndim = boxsize.size
     density = N/(np.prod(boxsize))
@@ -254,17 +260,14 @@ def _get_volume(count, r, phi, theta, ndim):
 
 
 @nb.njit(parallel=True, cache=True)
-def _get_displacements(r, p, pairs, boxsize, rmax, nr, nphi, ntheta):
+def _get_displacements(r, p, pairs, boxsize, rmax, nr, nphi, ntheta, rbuff):
     '''Get displacements between pairs'''
     rotate = True if p.shape == r.shape else False
-    ndim = r.shape[-1]
     npairs = pairs.shape[0]
-    rnorm = np.zeros(npairs) if nr > 1 else np.array([0.])
-    phi = np.zeros(npairs) if nphi > 1 else np.array([0.])
-    theta = np.zeros(npairs) if ntheta > 1 else np.array([0.])
     for index in nb.prange(npairs):
         pair = pairs[index]
         i, j = pair
+        # Get displacement vector
         r_i, r_j = r[i], r[j]
         r_ij = r_j - r_i
         if np.linalg.norm(r_ij) >= rmax:
@@ -276,14 +279,17 @@ def _get_displacements(r, p, pairs, boxsize, rmax, nr, nphi, ntheta):
             p_i = p[i] / np.linalg.norm(p[i])
             R = _rotation_matrix(p_i)
             r_ij = R @ r_ij
+        # Fill buffer
+        k = 0
         norm = np.linalg.norm(r_ij)
         if nr > 1:
-            rnorm[index] = norm
+            rbuff[index, k] = norm
+            k += 1
         if nphi > 1:
-            phi[index] = np.arctan2(r_ij[1], r_ij[0])
+            rbuff[index, k] = np.arctan2(r_ij[1], r_ij[0])
+            k += 1
         if ntheta > 1:
-            theta[index] = np.arccos(r_ij[2] / norm)
-    return rnorm, phi, theta
+            rbuff[index, k] = np.arccos(r_ij[2] / norm)
 
 
 @nb.njit(cache=True)
@@ -380,14 +386,14 @@ if __name__ == "__main__":
     from matplotlib import pyplot as plt
 
     N = 2000
-    boxsize = [100, 100, 100]
-    pos = np.random.rand(N, 3)*100
-    orient = np.random.rand(N, 3)
+    boxsize = [100, 100]
+    pos = np.random.rand(N, 2)*100
+    orient = np.ones((N, 2))
     rmax = 8
 
-    g, r, phi, theta = sdf(pos, boxsize, rmax=rmax,
-                           orientations=orient, bench=True,
-                           nr=150, ntheta=100, nphi=None)
+    g, r, phi = sdf(pos, boxsize, rmax=rmax,
+                    orientations=orient, bench=True,
+                    nr=150, nphi=100)
 
     print(g.mean(), g.shape)
 
@@ -403,9 +409,9 @@ if __name__ == "__main__":
         plt.show()
     else:
         fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
-        angle = theta
+        angle = phi
         rmesh, amesh = np.meshgrid(r, angle)
-        im = ax.contourf(amesh, rmesh, g.T, np.linspace(.9, 1.1, 70), cmap="plasma")
+        im = ax.contourf(amesh, rmesh, g.T, 100, cmap="plasma")
         ax.set_xlim((angle.min(), angle.max()))
         fig.colorbar(im)
         plt.show()
