@@ -17,6 +17,8 @@ Adapted from https://github.com/wenyan4work/point_cloud.
 import numpy as np
 import scipy.spatial as spatial
 import numba as nb
+import dask.array as da
+from dask import delayed
 from scipy.integrate import simps
 from scipy.special import jv
 from time import time
@@ -97,8 +99,9 @@ def structure_factor(gr, r, N, boxsize, q=None, **kwargs):
     return Sq, q
 
 
-def sdf(positions, boxsize, orientations=None,
-        rmin=None, rmax=None, nr=100, nphi=None, ntheta=None, bench=False):
+def sdf(positions, boxsize, orientations=None, rmin=None, rmax=None,
+        nr=100, nphi=None, ntheta=None, int=np.int32, float=np.float64,
+        chunks=None, bench=False, **kwargs):
     """
     .. _sdf:
 
@@ -147,8 +150,19 @@ def sdf(positions, boxsize, orientations=None,
         Number of points to bin in :math:`\\phi`
     ntheta : `int`, optional
         Number of points to bin in :math:`\\theta`
+    int : `np.dtype`, optional
+        Integer type for pair counting array.
+        Lets the user relax memory requirements.
+    float : `np.dtype`, optional
+        Floating-point type for displacement buffers.
+        Lets the user relax memory requirements.
+    chunks : `int`, optional
+        If this argument is passed, use dask to
+        calculate displacements in chunks.
     bench : `bool`, optional
         Print message for time of calculation.
+    kwargs
+        Additional keyword arguments passed to dask.compute
     Returns
     -------
     g : `np.ndarray`, shape `(nr, nphi, ntheta)`
@@ -175,7 +189,7 @@ def sdf(positions, boxsize, orientations=None,
             msg = f"Shape of orientations array must match positions array {(N, ndim)}"
             raise ValueError(msg)
     else:
-        orientations = np.array([])
+        orientations = np.array([0])
 
     # Binning keyword args
     rmin = 0 if rmin is None else rmin
@@ -195,27 +209,35 @@ def sdf(positions, boxsize, orientations=None,
         t0 = time()
 
     # Get particle pairs
-    pairs = _get_pairs(positions, boxsize, rmax)
+    pairs = _get_pairs(positions, boxsize, rmax, int)
 
     if bench:
         t1 = time()
         print(f"Counted {len(pairs)} pairs: {t1-t0:.04f} s")
 
     # Get displacements
-    npairs = len(pairs)
-    rvec = np.zeros((npairs, ncoords))
-    _get_displacements(positions, orientations, pairs, boxsize,
-                       rmax, nr, nphi, ntheta, rvec)
-
-    if bench:
-        t2 = time()
-        print(f"Displacement calculation: {t2-t1:.04f} s")
+    npairs = 2*len(pairs)
+    args = (positions, orientations, pairs, boxsize, rmax, nr, nphi, ntheta)
+    dask = True if chunks is not None else False
+    if dask:
+        chunks = npairs-1 if chunks >= npairs else chunks
+        rbuff = da.zeros(shape=(npairs, ncoords), dtype=float,
+                         chunks=(chunks, ncoords))
+        kernel = delayed(_get_displacements)(rbuff, *args)
+        rvec = da.from_delayed(kernel, dtype=float, shape=rbuff.shape)
+    else:
+        rbuff = np.zeros((npairs, ncoords), dtype=float)
+        rvec = _get_displacements(rbuff, *args)
 
     # Get g(r, phi)
     r_n = np.linspace(rmin, rmax, nr+1)
     phi_m = 2*np.pi*np.linspace(0, 1, nphi+1) - np.pi
     theta_l = np.pi*np.linspace(0, 1, ntheta+1)
-    g = _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l)
+    g = _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l, dask, **kwargs)
+
+    if bench:
+        t2 = time()
+        print(f"Displacement calculation: {t2-t1:.04f} s")
 
     del rvec
 
@@ -226,7 +248,7 @@ def sdf(positions, boxsize, orientations=None,
     return tuple(out)
 
 
-def _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l):
+def _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l, dask, **kwargs):
     '''Generate spatial distribution function'''
     # Prepare arguments
     bins = []
@@ -234,7 +256,12 @@ def _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l):
         if b.size > 2:
             bins.append(b)
     # Bin
-    count, edges = np.histogramdd(rvec, bins=bins)
+    if dask:
+        kernel, edges = da.histogramdd(rvec, bins=bins)
+        count = kernel.compute(**kwargs)
+    else:
+        count, edges = np.histogramdd(rvec, bins=bins)
+
     # Scale with bin volume and density
     ndim = boxsize.size
     density = N/(np.prod(boxsize))
@@ -260,36 +287,39 @@ def _get_volume(count, r, phi, theta, ndim):
 
 
 @nb.njit(parallel=True, cache=True)
-def _get_displacements(r, p, pairs, boxsize, rmax, nr, nphi, ntheta, rbuff):
+def _get_displacements(rbuff, r, p, pairs, boxsize, rmax, nr, nphi, ntheta):
     '''Get displacements between pairs'''
     rotate = True if p.shape == r.shape else False
-    npairs = pairs.shape[0]
-    for index in nb.prange(npairs):
-        pair = pairs[index]
-        i, j = pair
-        # Get displacement vector
-        r_i, r_j = r[i], r[j]
-        r_ij = r_j - r_i
-        if np.linalg.norm(r_ij) >= rmax:
-            # Fix periodic image
-            image = _closest_image(r_i, r_j, boxsize)
-            r_ij = image - r_i
-        if rotate:
-            # Rotate particle head to +z direction
-            p_i = p[i] / np.linalg.norm(p[i])
-            R = _rotation_matrix(p_i)
-            r_ij = R @ r_ij
-        # Fill buffer
-        k = 0
-        norm = np.linalg.norm(r_ij)
-        if nr > 1:
-            rbuff[index, k] = norm
-            k += 1
-        if nphi > 1:
-            rbuff[index, k] = np.arctan2(r_ij[1], r_ij[0])
-            k += 1
-        if ntheta > 1:
-            rbuff[index, k] = np.arccos(r_ij[2] / norm)
+    nthreads = pairs.shape[0]
+    for idx1 in nb.prange(nthreads):
+        for idx2 in range(2):
+            pair = pairs[idx1]
+            index = idx1 + nthreads*idx2
+            i, j = pair if idx2 == 0 else pair[::-1]
+            # Get displacement vector
+            r_i, r_j = r[i], r[j]
+            r_ij = r_j - r_i
+            if np.linalg.norm(r_ij) >= rmax:
+                # Fix periodic image
+                image = _closest_image(r_i, r_j, boxsize)
+                r_ij = image - r_i
+            if rotate:
+                # Rotate particle head to +z direction
+                p_i = p[i] / np.linalg.norm(p[i])
+                R = _rotation_matrix(p_i)
+                r_ij = R @ r_ij
+            # Fill buffer
+            k = 0
+            norm = np.linalg.norm(r_ij)
+            if nr > 1:
+                rbuff[index, k] = norm
+                k += 1
+            if nphi > 1:
+                rbuff[index, k] = np.arctan2(r_ij[1], r_ij[0])
+                k += 1
+            if ntheta > 1:
+                rbuff[index, k] = np.arccos(r_ij[2] / norm)
+    return rbuff
 
 
 @nb.njit(cache=True)
@@ -316,19 +346,12 @@ def _rotation_matrix(p):
     return R
 
 
-
-def _get_pairs(coords, boxsize, rmax):
+def _get_pairs(coords, boxsize, rmax, int):
     '''Get coordinate pairs within distance rmax'''
     tree = spatial.cKDTree(coords, boxsize=boxsize)
     # Get unique pairs (i<j)
-    temp = tree.query_pairs(r=rmax, output_type="ndarray")
-    # Get rest of the pairs (i>=j)
-    npairs = len(temp)
-    pairs = np.zeros(shape=(2*npairs, 2), dtype=np.int)
-    pairs[:npairs, :] = temp
-    pairs[npairs:, :] = temp[:, [1, 0]]
-    del tree, temp
-    return pairs
+    pairs = tree.query_pairs(r=rmax)
+    return np.array(list(pairs), dtype=int)
 
 
 @nb.njit(cache=True)
@@ -385,15 +408,16 @@ if __name__ == "__main__":
 
     from matplotlib import pyplot as plt
 
-    N = 2000
+    N = 1000
     boxsize = [100, 100]
+    np.random.seed(1234)
     pos = np.random.rand(N, 2)*100
     orient = np.ones((N, 2))
-    rmax = 8
+    rmax = 10
 
     g, r, phi = sdf(pos, boxsize, rmax=rmax,
                     orientations=orient, bench=True,
-                    nr=150, nphi=100)
+                    nr=150, nphi=100, chunks=300)
 
     print(g.mean(), g.shape)
 
