@@ -1,5 +1,5 @@
 spatialstats.polyspectra
-===================
+========================
 
 To use GPU routines, run
 

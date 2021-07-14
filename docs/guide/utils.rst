@@ -1,5 +1,5 @@
 spatialstats.utils
-=============
+==================
 
 Averaging
 ---------
