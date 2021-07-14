@@ -134,7 +134,7 @@ def sdf(positions, boxsize, orientations=None, rmin=None, rmax=None,
         The rectangular domain over which
         to apply periodic boundary conditions.
         Passed to ``scipy.spatial.cKDTree``.
-    orientations : `np.ndarray`, shape `(N, ndim)`
+    orientations : `np.ndarray`, shape `(N, ndim)`, optional
         Particle orientation vectors :math:`\\mathbf{p}_i`.
         Vectors should be unitary, but they will be
         normalized automatically.
