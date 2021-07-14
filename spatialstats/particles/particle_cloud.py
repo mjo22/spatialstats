@@ -147,9 +147,9 @@ def sdf(positions, boxsize, orientations=None, rmin=None, rmax=None,
     nr : `int`, optional
         Number of points to bin in :math:`r`.
     nphi : `int`, optional
-        Number of points to bin in :math:`\\phi`
+        Number of points to bin in :math:`\\phi`.
     ntheta : `int`, optional
-        Number of points to bin in :math:`\\theta`
+        Number of points to bin in :math:`\\theta`.
     int : `np.dtype`, optional
         Integer type for pair counting array.
         Lets the user relax memory requirements.
