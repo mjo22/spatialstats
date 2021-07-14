@@ -115,7 +115,7 @@ def sdf(positions, boxsize, orientations=None,
     If particles orientations :math:`\\mathbf{p}_i` are included,
     instead define :math:`\\phi` as the angle in the
     coordinate system with :math:`\\mathbf{p}_i` pointed in the
-    :math:`+y` direction in 2D or :math:`+z` direction in 3D.
+    :math:`+z` direction.
 
     .. note::
         Reduces to the 1D distribution function :math:`g(r)`
@@ -274,12 +274,7 @@ def _get_displacements(r, p, pairs, boxsize, rmax, nr, nphi, ntheta):
         if rotate:
             # Rotate particle head to +z direction
             p_i = p[i] / np.linalg.norm(p[i])
-            angle = np.arccos(p_i[-1])
-            c, s = np.cos(angle), np.sin(angle)
-            if ndim == 2:
-                R = np.array(((c, -s), (s, c)))
-            else:
-                R = np.array(((c, -s, 0), (s, c, 0), (0, 0, 1)))
+            R = _rotation_matrix(p_i)
             r_ij = R @ r_ij
         norm = np.linalg.norm(r_ij)
         if nr > 1:
@@ -289,6 +284,31 @@ def _get_displacements(r, p, pairs, boxsize, rmax, nr, nphi, ntheta):
         if ntheta > 1:
             theta[index] = np.arccos(r_ij[2] / norm)
     return rnorm, phi, theta
+
+
+@nb.njit(cache=True)
+def _rotation_matrix(p):
+    '''
+    Rotation matrix to align coords so that
+    a vector p is in the +z direction.
+    In 3D, use the Rodrigues rotation formula.
+    '''
+    # Angle of rotation is arccos(p . z)
+    cos, sin = p[-1], np.sin(np.arccos(p[-1]))
+    if p.size == 2:
+        R = np.array(((cos, -sin), (sin, cos)))
+    else:
+        # Rotation axis k = p x z
+        k = np.array([p[1], -p[0], 0])
+        k /= np.linalg.norm(k)
+        # Cross product matrix K
+        K = np.array(((0, -k[2], k[1]),
+                      (k[2], 0, -k[0]),
+                      (-k[1], k[0], 0)))
+        # Matrix formulation of Rodrigues formula
+        R = np.eye(3) + sin*K + (1-cos)*K@K
+    return R
+
 
 
 def _get_pairs(coords, boxsize, rmax):
@@ -359,11 +379,11 @@ if __name__ == "__main__":
 
     from matplotlib import pyplot as plt
 
-    N = 3000
+    N = 2000
     boxsize = [100, 100, 100]
     pos = np.random.rand(N, 3)*100
     orient = np.random.rand(N, 3)
-    rmax = 50
+    rmax = 8
 
     g, r, phi, theta = sdf(pos, boxsize, rmax=rmax,
                            orientations=orient, bench=True,
