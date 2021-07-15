@@ -17,8 +17,6 @@ Adapted from https://github.com/wenyan4work/point_cloud.
 import numpy as np
 import scipy.spatial as spatial
 import numba as nb
-import dask.array as da
-from dask import delayed
 from scipy.integrate import simps
 from scipy.special import jv
 from time import time
@@ -101,7 +99,7 @@ def structure_factor(gr, r, N, boxsize, q=None, **kwargs):
 
 def sdf(positions, boxsize, orientations=None, rmin=None, rmax=None,
         nr=100, nphi=None, ntheta=None, int=np.int32, float=np.float64,
-        chunks=None, bench=False, **kwargs):
+        bench=False, **kwargs):
     """
     .. _sdf:
 
@@ -156,13 +154,8 @@ def sdf(positions, boxsize, orientations=None, rmin=None, rmax=None,
     float : `np.dtype`, optional
         Floating-point type for displacement buffers.
         Lets the user relax memory requirements.
-    chunks : `int`, optional
-        If this argument is passed, use dask to
-        calculate displacements in chunks.
     bench : `bool`, optional
         Print message for time of calculation.
-    kwargs
-        Additional keyword arguments passed to dask.compute
     Returns
     -------
     g : `np.ndarray`, shape `(nr, nphi, ntheta)`
@@ -210,30 +203,25 @@ def sdf(positions, boxsize, orientations=None, rmin=None, rmax=None,
 
     # Get particle pairs
     pairs = _get_pairs(positions, boxsize, rmax, int)
+    npairs = len(pairs)
+
+    if npairs == 0:
+        raise ValueError(f"Counted 0 pairs. Try increasing rmax")
 
     if bench:
         t1 = time()
-        print(f"Counted {len(pairs)} pairs: {t1-t0:.04f} s")
+        print(f"Counted {npairs} pairs: {t1-t0:.04f} s")
 
     # Get displacements
-    npairs = 2*len(pairs)
-    args = (positions, orientations, pairs, boxsize, rmax, nr, nphi, ntheta)
-    dask = True if chunks is not None else False
-    if dask:
-        chunks = npairs-1 if chunks >= npairs else chunks
-        rbuff = da.zeros(shape=(npairs, ncoords), dtype=float,
-                         chunks=(chunks, ncoords))
-        kernel = delayed(_get_displacements)(rbuff, *args)
-        rvec = da.from_delayed(kernel, dtype=float, shape=rbuff.shape)
-    else:
-        rbuff = np.zeros((npairs, ncoords), dtype=float)
-        rvec = _get_displacements(rbuff, *args)
+    args = (positions, orientations, boxsize, rmax, nr, nphi, ntheta)
+    rbuff = np.zeros((2*npairs, ncoords), dtype=float)
+    rvec = _get_displacements(rbuff, pairs, *args)
 
     # Get g(r, phi)
     r_n = np.linspace(rmin, rmax, nr+1)
     phi_m = 2*np.pi*np.linspace(0, 1, nphi+1) - np.pi
     theta_l = np.pi*np.linspace(0, 1, ntheta+1)
-    g = _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l, dask, **kwargs)
+    g = _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l, **kwargs)
 
     if bench:
         t2 = time()
@@ -248,7 +236,7 @@ def sdf(positions, boxsize, orientations=None, rmin=None, rmax=None,
     return tuple(out)
 
 
-def _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l, dask, **kwargs):
+def _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l, **kwargs):
     '''Generate spatial distribution function'''
     # Prepare arguments
     bins = []
@@ -256,11 +244,7 @@ def _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l, dask, **kwargs):
         if b.size > 2:
             bins.append(b)
     # Bin
-    if dask:
-        kernel, edges = da.histogramdd(rvec, bins=bins)
-        count = kernel.compute(**kwargs)
-    else:
-        count, edges = np.histogramdd(rvec, bins=bins)
+    count, edges = np.histogramdd(rvec, bins=bins)
 
     # Scale with bin volume and density
     ndim = boxsize.size
@@ -287,7 +271,7 @@ def _get_volume(count, r, phi, theta, ndim):
 
 
 @nb.njit(parallel=True, cache=True)
-def _get_displacements(rbuff, r, p, pairs, boxsize, rmax, nr, nphi, ntheta):
+def _get_displacements(rbuff, pairs, r, p, boxsize, rmax, nr, nphi, ntheta):
     '''Get displacements between pairs'''
     rotate = True if p.shape == r.shape else False
     nthreads = pairs.shape[0]
@@ -299,18 +283,18 @@ def _get_displacements(rbuff, r, p, pairs, boxsize, rmax, nr, nphi, ntheta):
             # Get displacement vector
             r_i, r_j = r[i], r[j]
             r_ij = r_j - r_i
-            if np.linalg.norm(r_ij) >= rmax:
+            if _norm(r_ij) >= rmax:
                 # Fix periodic image
                 image = _closest_image(r_i, r_j, boxsize)
                 r_ij = image - r_i
             if rotate:
                 # Rotate particle head to +z direction
-                p_i = p[i] / np.linalg.norm(p[i])
+                p_i = p[i] / _norm(p[i])
                 R = _rotation_matrix(p_i)
-                r_ij = R @ r_ij
+                r_ij = _matvec(R, r_ij)
             # Fill buffer
             k = 0
-            norm = np.linalg.norm(r_ij)
+            norm = _norm(r_ij)
             if nr > 1:
                 rbuff[index, k] = norm
                 k += 1
@@ -336,13 +320,13 @@ def _rotation_matrix(p):
     else:
         # Rotation axis k = p x z
         k = np.array([p[1], -p[0], 0])
-        k /= np.linalg.norm(k)
+        k /= _norm(k)
         # Cross product matrix K
         K = np.array(((0, -k[2], k[1]),
                       (k[2], 0, -k[0]),
                       (-k[1], k[0], 0)))
         # Matrix formulation of Rodrigues formula
-        R = np.eye(3) + sin*K + (1-cos)*K@K
+        R = np.eye(3) + sin*K + (1-cos)*_matmul(K, K)
     return R
 
 
@@ -374,7 +358,7 @@ def _closest_point(target, positions):
     positions = np.array(positions)
     distance = []
     for p in positions:
-        distance.append(np.linalg.norm(p-target))
+        distance.append(_norm(p-target))
     distance = np.array(distance)
     ind = np.argmin(distance)
     return positions[ind], ind
@@ -404,6 +388,39 @@ def _closest_image(target, source, boxsize):
     return image
 
 
+@nb.njit(cache=True)
+def _norm(x):
+    return np.sqrt(_dot(x, x))
+
+
+@nb.njit(cache=True)
+def _dot(a, b):
+    dot = 0
+    for i in range(a.size):
+        dot += a[i]*b[i]
+    return dot
+
+
+@nb.njit(cache=True)
+def _matvec(A, x):
+    b = np.zeros_like(x)
+    m, n = A.shape
+    for i in range(m):
+        b[i] = _dot(A[i, :], x[:])
+    return b
+
+
+@nb.njit(cache=True)
+def _matmul(A, B):
+    C = np.zeros_like(A)
+    m, n = A.shape
+    for i in range(m):
+        for j in range(n):
+            C[i, j] = _dot(A[i, :], B[:, j])
+    return C
+
+
+
 if __name__ == "__main__":
 
     from matplotlib import pyplot as plt
@@ -417,7 +434,7 @@ if __name__ == "__main__":
 
     g, r, phi = sdf(pos, boxsize, rmax=rmax,
                     orientations=orient, bench=True,
-                    nr=150, nphi=100, chunks=300)
+                    nr=150, nphi=100)
 
     print(g.mean(), g.shape)
 
