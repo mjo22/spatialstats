@@ -227,7 +227,7 @@ def sdf(positions, boxsize, orientations=None, rmin=None, rmax=None,
         t2 = time()
         print(f"Displacement calculation: {t2-t1:.04f} s")
 
-    del rvec
+    del rvec, rbuff, pairs
 
     out = [g, r_n[:-1], phi_m[:-1]]
     if ndim == 3:
@@ -245,7 +245,6 @@ def _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l, **kwargs):
             bins.append(b)
     # Bin
     count, edges = np.histogramdd(rvec, bins=bins)
-
     # Scale with bin volume and density
     ndim = boxsize.size
     density = N/(np.prod(boxsize))
@@ -425,12 +424,12 @@ if __name__ == "__main__":
 
     from matplotlib import pyplot as plt
 
-    N = 1000
+    N = 5000
     boxsize = [100, 100]
     np.random.seed(1234)
     pos = np.random.rand(N, 2)*100
     orient = np.ones((N, 2))
-    rmax = 10
+    rmax = 20
 
     g, r, phi = sdf(pos, boxsize, rmax=rmax,
                     orientations=orient, bench=True,

@@ -300,10 +300,8 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     B.imag /= counts
 
     # Prepare diagnostics
-    if diagnostics:
-        counts = counts.astype(np.int64)
-        if error:
-            stderr[counts <= 1.] = np.nan
+    if error:
+        stderr[counts <= 1.] = np.nan
 
     # Switch back to theta monotonically increasing
     if ntheta is not None:
@@ -388,7 +386,10 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords, nsamples,
     binorm = np.full((ntheta, dim, dim), np.nan, dtype=np.float64)
     counts = np.full((ntheta, dim, dim), np.nan, dtype=np.float64)
     omega = np.zeros((dim, dim), dtype=np.int64)
-    stderr = np.full((ntheta, dim, dim), np.nan, dtype=np.float64)
+    if error:
+        stderr = np.full((ntheta, dim, dim), np.nan, dtype=np.float64)
+    else:
+        stderr = np.zeros((1, 1, 1), dtype=np.float64)
     for i in range(dim):
         k1 = kn[i]
         k1ind = k1bins[i]
@@ -556,26 +557,26 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    N = 100
+    N = 20
     np.random.seed(1234)
-    data = np.random.normal(size=N*(N+2)*(N+4)).reshape((N, N+2, N+4))+1
+    data = np.random.rand(N, N, N)+1
 
-    kmin, kmax = 1, 20
-    result = bispectrum(data, nsamples=None, kmin=kmin, kmax=kmax,
-                        ntheta=1, progress=True, error=True, bench=True)
-    bispec, bicoh, kn, theta, counts, omega, stderr = result
+    kmin, kmax = 1, 10
+    result = bispectrum(data, kmin=kmin, kmax=kmax,
+                        ntheta=9, progress=True, bench=True)
+    bispec, bicoh, kn, theta, counts, omega = result
 
-    print(np.mean(bispec), np.mean(bicoh))
+    print(np.nansum(bispec), np.nansum(bicoh))
 
     tidx = 0
-    bispec, bicoh, counts, stderr = [x[tidx] for x in [bispec, bicoh, counts, stderr]]
+    bispec, bicoh, counts = [x[tidx] for x in [bispec, bicoh, counts]]
 
     # Plot
     cmap = 'plasma'
     labels = [r"$|B(k_1, k_2)|$", "$b(k_1, k_2)$",
-              "$arg \ B(k_1, k_2)$", "std error"]#, "counts"]
+              "$arg \ B(k_1, k_2)$", "counts"]#, "counts"]
     data = [np.log10(np.abs(bispec)), np.log10(bicoh),
-            np.angle(bispec), np.log10(stderr)]#, np.log10(counts)]
+            np.angle(bispec), np.log10(counts)]#, np.log10(counts)]
     fig, axes = plt.subplots(ncols=2, nrows=2)
     for i in range(len(data)):
         ax = axes.flat[i]

@@ -199,7 +199,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
             del temp
         else:
             fft = cp.asarray(u[i], dtype=complex)
-        ffts.append(fft[..., :shape[-1]//2+1])
+        ffts.append(fft[..., :shape[-1]//2])
         del fft
         mempool.free_all_blocks()
         pinned_mempool.free_all_blocks()
@@ -376,7 +376,7 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords,
     if error:
         stderr = cp.full((ntheta, dim, dim), np.nan, dtype=float)
     else:
-        stderr = cp.array([0.], dtype=np.float64)
+        stderr = cp.array([0.], dtype=float)
     for i in range(dim):
         k1 = kn[i]
         k1ind = k1bins[i]
@@ -413,12 +413,12 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords,
                                            *ffts))
             if ntheta == 1:
                 _fill_sum(i, j, bispec, binorm, counts, stderr,
-                          bispecbuf, binormbuf, countbuf)
+                          bispecbuf, binormbuf, countbuf, error)
             else:
                 binned = cp.searchsorted(costheta, cthetabuf)
                 _fill_binned_sum(i, j, ntheta, binned,
                                  bispec, binorm, counts, stderr,
-                                 bispecbuf, binormbuf, countbuf)
+                                 bispecbuf, binormbuf, countbuf, error)
             omega[i, j], omega[j, i] = nk1*nk2, nk1*nk2
             del bispecbuf, binormbuf, countbuf, samp
             mempool.free_all_blocks()
@@ -430,21 +430,21 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords,
 
 
 def _fill_sum(i, j, bispec, binorm, counts, stderr,
-              bispecbuf, binormbuf, countbuf):
+              bispecbuf, binormbuf, countbuf, error):
     N = countbuf.sum()
     norm = binormbuf.sum()
     value = bispecbuf.sum()
     bispec[0, i, j], bispec[0, j, i] = value, value
     binorm[0, i, j], binorm[0, j, i] = norm, norm
     counts[0, i, j], counts[0, j, i] = N, N
-    if stderr.size > 1:
+    if error and N > 1:
         variance = cp.abs(bispecbuf - (value / N))**2
         err = np.sqrt(variance.sum() / (N*(N - 1)))
         stderr[0, i, j], stderr[0, j, i] = err, err
 
 
-def _fill_binned_sum(i, j, ntheta, binned, bispec, binorm,
-                     counts, stderr, bispecbuf, binormbuf, countbuf):
+def _fill_binned_sum(i, j, ntheta, binned, bispec, binorm, counts,
+                     stderr, bispecbuf, binormbuf, countbuf, error):
     N = cp.bincount(binned, weights=countbuf, minlength=ntheta)
     norm = cp.bincount(binned, weights=binormbuf, minlength=ntheta)
     value = cp.bincount(binned, weights=bispecbuf.real, minlength=ntheta) +\
@@ -452,7 +452,7 @@ def _fill_binned_sum(i, j, ntheta, binned, bispec, binorm,
     bispec[:, i, j], bispec[:, j, i] = value, value
     binorm[:, i, j], binorm[:, j, i] = norm, norm
     counts[:, i, j], counts[:, j, i] = N, N
-    if stderr.size > 1:
+    if error:
         variance = cp.zeros_like(countbuf)
         for n in range(ntheta):
             if N[n] > 1:
@@ -494,6 +494,19 @@ __global__ void computePoint3D(long* k1ind, long* k2ind,
 
         __syncthreads();
 
+        // Calculate angles
+        if (ntheta > 1) {
+            double k1dotk2, k1norm, k2norm, costheta;
+            double x1, y1, z1, x2, y2, z2;
+            x1 = double(k1x); y1 = double(k1y); z1 = double(k1z);
+            x2 = double(k2x); y2 = double(k2y); z2 = double(k2z);
+            k1dotk2 = x1*x2 + y1*y2 + z1*z2;
+            k1norm = sqrt(x1*x1 + y1*y1 + z1*z1);
+            k2norm = sqrt(x2*x2 + y2*y2 + z2*z2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
+
         // Map frequency domain to index domain
         short q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
         short cj1, cj2, cj3;
@@ -533,18 +546,6 @@ __global__ void computePoint3D(long* k1ind, long* k2ind,
         binormbuf[idx] = mod;
         countbuf[idx] = 1;
 
-        // Calculate angles
-        if (ntheta > 1) {
-            double k1dotk2, k1norm, k2norm, costheta;
-            double x1, y1, z1, x2, y2, z2;
-            x1 = double(k1x); y1 = double(k1y); z1 = double(k1z);
-            x2 = double(k2x); y2 = double(k2y); z2 = double(k2z);
-            k1dotk2 = x1*x2 + y1*y2 + z1*z2;
-            k1norm = sqrt(x1*x1 + y1*y1 + z1*z1);
-            k2norm = sqrt(x2*x2 + y2*y2 + z2*z2);
-            costheta = k1dotk2 / (k1norm*k2norm);
-            cthetabuf[idx] = costheta;
-        }
     }
 }
 
@@ -574,6 +575,19 @@ __global__ void computePoint2D(const long* k1ind, const long* k2ind,
         if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2)) { return; }
 
         __syncthreads();
+
+        // Calculate angles
+        if (ntheta > 1) {
+            double k1dotk2, k1norm, k2norm, costheta;
+            double x1, y1, x2, y2;
+            x1 = double(k1x); y1 = double(k1y);
+            x2 = double(k2x); y2 = double(k2y);
+            k1dotk2 = x1*x2 + y1*y2;
+            k1norm = sqrt(x1*x1 + y1*y1);
+            k2norm = sqrt(x2*x2 + y2*y2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
 
         // Map frequency domain to index domain
         short q1x, q1y, q2x, q2y, q3x, q3y;
@@ -611,18 +625,6 @@ __global__ void computePoint2D(const long* k1ind, const long* k2ind,
         binormbuf[idx] = mod;
         countbuf[idx] = 1;
 
-        // Calculate angles
-        if (ntheta > 1) {
-            double k1dotk2, k1norm, k2norm, costheta;
-            double x1, y1, x2, y2;
-            x1 = double(k1x); y1 = double(k1y);
-            x2 = double(k2x); y2 = double(k2y);
-            k1dotk2 = x1*x2 + y1*y2;
-            k1norm = sqrt(x1*x1 + y1*y1);
-            k2norm = sqrt(x2*x2 + y2*y2);
-            costheta = k1dotk2 / (k1norm*k2norm);
-            cthetabuf[idx] = costheta;
-        }
     }
 }
 
@@ -654,6 +656,19 @@ __global__ void computePointVec3D(long* k1ind, long* k2ind,
         if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2) || (abs(k3z) > Nz/2)) { return; }
 
         __syncthreads();
+
+        // Calculate angles
+        if (ntheta > 1) {
+            double k1dotk2, k1norm, k2norm, costheta;
+            double x1, y1, z1, x2, y2, z2;
+            x1 = double(k1x); y1 = double(k1y); z1 = double(k1z);
+            x2 = double(k2x); y2 = double(k2y); z2 = double(k2z);
+            k1dotk2 = x1*x2 + y1*y2 + z1*z2;
+            k1norm = sqrt(x1*x1 + y1*y1 + z1*z1);
+            k2norm = sqrt(x2*x2 + y2*y2 + z2*z2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
 
         // Map frequency domain to index domain
         short q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
@@ -709,18 +724,6 @@ __global__ void computePointVec3D(long* k1ind, long* k2ind,
         binormbuf[idx] = abs(sx) + abs(sy) + abs(sz);
         countbuf[idx] = 1;
 
-        // Calculate angles
-        if (ntheta > 1) {
-            double k1dotk2, k1norm, k2norm, costheta;
-            double x1, y1, z1, x2, y2, z2;
-            x1 = double(k1x); y1 = double(k1y); z1 = double(k1z);
-            x2 = double(k2x); y2 = double(k2y); z2 = double(k2z);
-            k1dotk2 = x1*x2 + y1*y2 + z1*z2;
-            k1norm = sqrt(x1*x1 + y1*y1 + z1*z1);
-            k2norm = sqrt(x2*x2 + y2*y2 + z2*z2);
-            costheta = k1dotk2 / (k1norm*k2norm);
-            cthetabuf[idx] = costheta;
-        }
     }
 }
 
@@ -751,6 +754,19 @@ __global__ void computePointVec2D(const long* k1ind, const long* k2ind,
         if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2)) { return; }
 
         __syncthreads();
+
+        // Calculate angles
+        if (ntheta > 1) {
+            double k1dotk2, k1norm, k2norm, costheta;
+            double x1, y1, x2, y2;
+            x1 = double(k1x); y1 = double(k1y);
+            x2 = double(k2x); y2 = double(k2y);
+            k1dotk2 = x1*x2 + y1*y2;
+            k1norm = sqrt(x1*x1 + y1*y1);
+            k2norm = sqrt(x2*x2 + y2*y2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
 
         // Map frequency domain to index domain
         short q1x, q1y, q2x, q2y, q3x, q3y;
@@ -803,18 +819,6 @@ __global__ void computePointVec2D(const long* k1ind, const long* k2ind,
         binormbuf[idx] = abs(sx) + abs(sy);
         countbuf[idx] = 1;
 
-        // Calculate angles
-        if (ntheta > 1) {
-            double k1dotk2, k1norm, k2norm, costheta;
-            double x1, y1, x2, y2;
-            x1 = double(k1x); y1 = double(k1y);
-            x2 = double(k2x); y2 = double(k2y);
-            k1dotk2 = x1*x2 + y1*y2;
-            k1norm = sqrt(x1*x1 + y1*y1);
-            k2norm = sqrt(x2*x2 + y2*y2);
-            costheta = k1dotk2 / (k1norm*k2norm);
-            cthetabuf[idx] = costheta;
-        }
     }
 }
 
@@ -844,6 +848,19 @@ __global__ void computePoint3Df(const long* k1ind, const long* k2ind,
         if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2) || (abs(k3z) > Nz/2)) { return; }
 
         __syncthreads();
+
+        // Calculate angles
+        if (ntheta > 1) {
+            float k1dotk2, k1norm, k2norm, costheta;
+            float x1, y1, z1, x2, y2, z2;
+            x1 = float(k1x); y1 = float(k1y); z1 = float(k1z);
+            x2 = float(k2x); y2 = float(k2y); z2 = float(k2z);
+            k1dotk2 = x1*x2 + y1*y2 + z1*z2;
+            k1norm = sqrt(x1*x1 + y1*y1 + z1*z1);
+            k2norm = sqrt(x2*x2 + y2*y2 + z2*z2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
 
         // Map frequency domain to index domain
         short q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
@@ -884,18 +901,6 @@ __global__ void computePoint3Df(const long* k1ind, const long* k2ind,
         binormbuf[idx] = mod;
         countbuf[idx] = 1;
 
-        // Calculate angles
-        if (ntheta > 1) {
-            float k1dotk2, k1norm, k2norm, costheta;
-            float x1, y1, z1, x2, y2, z2;
-            x1 = float(k1x); y1 = float(k1y); z1 = float(k1z);
-            x2 = float(k2x); y2 = float(k2y); z2 = float(k2z);
-            k1dotk2 = x1*x2 + y1*y2 + z1*z2;
-            k1norm = sqrt(x1*x1 + y1*y1 + z1*z1);
-            k2norm = sqrt(x2*x2 + y2*y2 + z2*z2);
-            costheta = k1dotk2 / (k1norm*k2norm);
-            cthetabuf[idx] = costheta;
-        }
     }
 }
 
@@ -924,6 +929,19 @@ __global__ void computePoint2Df(const long* k1ind, const long* k2ind,
         if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2)) { return; }
 
         __syncthreads();
+
+        // Calculate angles
+        if (ntheta > 1) {
+            float k1dotk2, k1norm, k2norm, costheta;
+            float x1, y1, x2, y2;
+            x1 = float(k1x); y1 = float(k1y);
+            x2 = float(k2x); y2 = float(k2y);
+            k1dotk2 = x1*x2 + y1*y2;
+            k1norm = sqrt(x1*x1 + y1*y1);
+            k2norm = sqrt(x2*x2 + y2*y2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
 
         // Map frequency domain to index domain
         short q1x, q1y, q2x, q2y, q3x, q3y;
@@ -961,18 +979,6 @@ __global__ void computePoint2Df(const long* k1ind, const long* k2ind,
         binormbuf[idx] = mod;
         countbuf[idx] = 1;
 
-        // Calculate angles
-        if (ntheta > 1) {
-            float k1dotk2, k1norm, k2norm, costheta;
-            float x1, y1, x2, y2;
-            x1 = float(k1x); y1 = float(k1y);
-            x2 = float(k2x); y2 = float(k2y);
-            k1dotk2 = x1*x2 + y1*y2;
-            k1norm = sqrt(x1*x1 + y1*y1);
-            k2norm = sqrt(x2*x2 + y2*y2);
-            costheta = k1dotk2 / (k1norm*k2norm);
-            cthetabuf[idx] = costheta;
-        }
     }
 }
 
@@ -1004,6 +1010,19 @@ __global__ void computePointVec3Df(const long* k1ind, const long* k2ind,
         if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2) || (abs(k3z) > Nz/2)) { return; }
 
         __syncthreads();
+
+        // Calculate angles
+        if (ntheta > 1) {
+            float k1dotk2, k1norm, k2norm, costheta;
+            float x1, y1, z1, x2, y2, z2;
+            x1 = float(k1x); y1 = float(k1y); z1 = float(k1z);
+            x2 = float(k2x); y2 = float(k2y); z2 = float(k2z);
+            k1dotk2 = x1*x2 + y1*y2 + z1*z2;
+            k1norm = sqrt(x1*x1 + y1*y1 + z1*z1);
+            k2norm = sqrt(x2*x2 + y2*y2 + z2*z2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
 
         // Map frequency domain to index domain
         short q1x, q1y, q1z, q2x, q2y, q2z, q3x, q3y, q3z;
@@ -1060,18 +1079,6 @@ __global__ void computePointVec3Df(const long* k1ind, const long* k2ind,
         binormbuf[idx] = abs(sx) + abs(sy) + abs(sz);
         countbuf[idx] = 1;
 
-        // Calculate angles
-        if (ntheta > 1) {
-            float k1dotk2, k1norm, k2norm, costheta;
-            float x1, y1, z1, x2, y2, z2;
-            x1 = float(k1x); y1 = float(k1y); z1 = float(k1z);
-            x2 = float(k2x); y2 = float(k2y); z2 = float(k2z);
-            k1dotk2 = x1*x2 + y1*y2 + z1*z2;
-            k1norm = sqrt(x1*x1 + y1*y1 + z1*z1);
-            k2norm = sqrt(x2*x2 + y2*y2 + z2*z2);
-            costheta = k1dotk2 / (k1norm*k2norm);
-            cthetabuf[idx] = costheta;
-        }
     }
 }
 
@@ -1101,6 +1108,19 @@ __global__ void computePointVec2Df(const long* k1ind, const long* k2ind,
         if ((abs(k3x) > Nx/2) || (abs(k3y) > Ny/2)) { return; }
 
         __syncthreads();
+
+        // Calculate angles
+        if (ntheta > 1) {
+            float k1dotk2, k1norm, k2norm, costheta;
+            float x1, y1, x2, y2;
+            x1 = float(k1x); y1 = float(k1y);
+            x2 = float(k2x); y2 = float(k2y);
+            k1dotk2 = x1*x2 + y1*y2;
+            k1norm = sqrt(x1*x1 + y1*y1);
+            k2norm = sqrt(x2*x2 + y2*y2);
+            costheta = k1dotk2 / (k1norm*k2norm);
+            cthetabuf[idx] = costheta;
+        }
 
         // Map frequency domain to index domain
         short q1x, q1y, q2x, q2y, q3x, q3y;
@@ -1153,18 +1173,6 @@ __global__ void computePointVec2Df(const long* k1ind, const long* k2ind,
         binormbuf[idx] = abs(sx) + abs(sy);
         countbuf[idx] = 1;
 
-        // Calculate angles
-        if (ntheta > 1) {
-            float k1dotk2, k1norm, k2norm, costheta;
-            float x1, y1, x2, y2;
-            x1 = float(k1x); y1 = float(k1y);
-            x2 = float(k2x); y2 = float(k2y);
-            k1dotk2 = x1*x2 + y1*y2;
-            k1norm = sqrt(x1*x1 + y1*y1);
-            k2norm = sqrt(x2*x2 + y2*y2);
-            costheta = k1dotk2 / (k1norm*k2norm);
-            cthetabuf[idx] = costheta;
-        }
     }
 }
 }''')
@@ -1192,26 +1200,26 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    N = 100
+    N = 20
     np.random.seed(1234)
-    data = np.random.normal(size=N*(N+2)*(N+4)).reshape((N, N+2, N+4))+1
+    data = np.random.rand(N, N, N)+1
 
-    kmin, kmax = 1, 20
+    kmin, kmax = 1, 10
     result = bispectrum(data, kmin=kmin, kmax=kmax,
-                        ntheta=1, double=True, progress=True, error=True, bench=True)
-    bispec, bicoh, kn, theta, counts, omega, stderr = result
+                        ntheta=9, double=True, progress=True, bench=True)
+    bispec, bicoh, kn, theta, counts, omega = result
 
-    print(np.mean(bispec), np.mean(bicoh))
+    print(np.nansum(bispec), np.nansum(bicoh))
 
     tidx = 0
-    bispec, bicoh, counts, stderr = [x[tidx] for x in [bispec, bicoh, counts, stderr]]
+    bispec, bicoh, counts = [x[tidx] for x in [bispec, bicoh, counts]]
 
     # Plot
     cmap = 'plasma'
     labels = [r"$|B(k_1, k_2)|$", "$b(k_1, k_2)$",
-              "$arg \ B(k_1, k_2)$", "std error"]#, "counts"]
+              "$arg \ B(k_1, k_2)$", "counts"]#, "counts"]
     data = [np.log10(np.abs(bispec)), np.log10(bicoh),
-            np.angle(bispec), np.log10(stderr)]#, np.log10(counts)]
+            np.angle(bispec), np.log10(counts)]#, np.log10(counts)]
     fig, axes = plt.subplots(ncols=2, nrows=2)
     for i in range(len(data)):
         ax = axes.flat[i]
