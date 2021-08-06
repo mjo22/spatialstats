@@ -4,4 +4,3 @@ numpy
 scipy
 numba>=0.50
 cupy>=8.0
-dask>=2021.7.0

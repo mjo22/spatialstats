@@ -16,7 +16,6 @@ spatialstats does not load any of its routines until the time of import (lazy lo
  * `numba <https://github.com/numba/numba>`_>=0.50
  * `cupy <https://github.com/cupy/cupy>`_>=8.0
  * `pyfftw <https://github.com/pyFFTW/pyFFTW>`_
- * `dask <https://github.com/dask/dask>`_>=2021.7.0
 
 To install with dependencies, the user may run::
 
