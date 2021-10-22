@@ -20,22 +20,33 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     """
     Estimate the bispectrum :math:`B(k_1, k_2, \\theta)`
     and bicoherence index :math:`b(k_1, k_2, \\theta)` of a real
-    scalar or vector field :math:`u`.
+    scalar field :math:`u` or vector field :math:`\mathbf{u}`.
 
-    Assuming statistical homogeneity, the bispectrum
-    :math:`B(\mathbf{k}_1, \mathbf{k}_2, \mathbf{k}_3)` is defined as the
+    Assuming statistical homogeneity, we define the bispectrum
+    :math:`B(\mathbf{k}_1, \mathbf{k}_2, \mathbf{k}_3)` as the
     3-point correlation function in Fourier space with
     :math:`\mathbf{k}_1 + \mathbf{k}_2 + \mathbf{k}_3 = 0`. For a
     real :math:`u`
 
     .. math::
-        B(\mathbf{k}_1, \mathbf{k}_2, - \mathbf{k}_1 - \mathbf{k}_2) = 
+        B(\mathbf{k}_1, \mathbf{k}_2) =
             \\langle\\tilde{u}(\mathbf{k}_1)\\tilde{u}(\mathbf{k}_2)
             \\tilde{u}^{*}(\mathbf{k}_1+\mathbf{k}_2)\\rangle,
 
     where :math:`\\tilde{u}` is the Fourier transform of :math:`u`
-    and :math:`\\langle\cdot\\rangle` is some ensemble average.
-    We compute our bispectrum as
+    and :math:`\\langle\cdot\\rangle` is some choice of averaging.
+    For a vector field, the bispectrum is a 3-tensor
+
+    .. math::
+        B_{ijk}(\mathbf{k}_1, \mathbf{k}_2) =
+            \\langle\\tilde{u}_i(\mathbf{k}_1)\\tilde{u}_j(\mathbf{k}_2)
+            \\tilde{u}_k^{*}(\mathbf{k}_1+\mathbf{k}_2)\\rangle,
+
+    where we have a bispectrum for each combination of vector
+    components. In 2D :math:`B_{ijk}` has 6 unique components
+    and in 3D it has 18.
+    Proceeding for the case of a scalar field, we compute our bispectrum
+    as
 
     .. math::
         B(k_1, k_2, \\theta) = \\frac{1}{V_1 V_2} \int\int_{\Omega}
@@ -54,15 +65,17 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
                 |\\tilde{u}(\mathbf{k}_1)\\tilde{u}(\mathbf{k}_2)
                     \\tilde{u}^{*}(\mathbf{k}_1 + \mathbf{k}_2)|}.
 
-    :math:`\Omega` is the set of all unique
+    :math:`\Omega` is the set of
     (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`) pairs such that
     :math:`|\mathbf{k}_1| \in [k_1, k_1+1)`,
-    :math:`|\mathbf{k}_2| \in [k_2, k_2+1)`, and
+    :math:`|\mathbf{k}_2| \in [k_2, k_2+1)` for
+    :math:`(\mathbf{k}_2)_z > 0`, and
     :math:`\\arccos{(\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2)} \in [\\theta, \\theta+\\Delta \\theta)`.
-    By "unique" pairs, we mean (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`)
-    but not the complex conjugate evaluations for
-    (:math:`-\mathbf{k}_1`, :math:`-\mathbf{k}_2`). Otherwise,
-    :math:`B` would be a real function.
+    We only consider :math:`(\mathbf{k}_2)_z > 0` to include
+    (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`) contributions
+    but not their complex conjugates from
+    (:math:`-\mathbf{k}_1`, :math:`-\mathbf{k}_2`). We want to preserve
+    the imaginary component of :math:`B`.
 
     If the data is also statistically isotropic, then we can say that
     the bispectrum is only a function of scalar wavenumber,
@@ -119,13 +132,11 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     Parameters
     ----------
     u : `np.ndarray`
-        Scalar or vector field.
-        If vector data, pass arguments as ``u1, u2, ..., un``,
-        where ``ui`` is the ith vector component.
+        Scalar field or vector components to correlate.
+        If vector data, pass arguments as ``u1, u2, u3``,
+        where ``ui`` is a vector component.
         Each ``ui`` can be 2D or 3D, and all must have the
-        same ``ui.shape`` and ``ui.dtype``. The vector
-        bispectrum will be computed as the sum over bispectra
-        of each component.
+        same ``ui.shape`` and ``ui.dtype``.
     ntheta : `int`, optional
         Number of angular bins :math:`\\theta` between triangles
         formed by wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
@@ -200,6 +211,9 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     """
     shape, ndim = nb.typed.List(u[0].shape), u[0].ndim
     ncomp = len(u)
+
+    if ncomp not in [1, 3]:
+        raise ValueError("Pass either 1 scalar field or 3 vector components.")
 
     if ndim not in [2, 3]:
         raise ValueError("Data must be 2D or 3D.")
@@ -475,6 +489,8 @@ def _compute_point3D(k1ind, k2ind, kcoords, ntheta, nk1, nk2, shape,
                      cthetabuf, countbuf, *ffts):
     kx, ky, kz = kcoords[0], kcoords[1], kcoords[2]
     Nx, Ny, Nz = shape[0], shape[1], shape[2]
+    nffts = len(ffts)
+    fft1, fft2, fft3 = 3*[ffts[0]] if nffts == 1 else ffts
     for idx in nb.prange(count):
         n, m = k1ind[samp[idx] % nk1], k2ind[samp[idx] // nk1]
         k1x, k1y, k1z = kx[n], ky[n], kz[n]
@@ -482,17 +498,14 @@ def _compute_point3D(k1ind, k2ind, kcoords, ntheta, nk1, nk2, shape,
         k3x, k3y, k3z = k1x+k2x, k1y+k2y, k1z+k2z
         if np.abs(k3x) > Nx//2 or np.abs(k3y) > Ny//2 or np.abs(k3z) > Nz//2:
             continue
-        sample, norm = 0, 0
-        for fft in ffts:
-            s1 = fft[k1x, k1y, k1z] if k1z >= 0 \
-                else np.conj(fft[-k1x, -k1y, -k1z])
-            s2 = fft[k2x, k2y, k2z] if k2z >= 0 \
-                else np.conj(fft[-k2x, -k2y, -k2z])
-            s3 = np.conj(fft[k3x, k3y, k3z]) if k3z >= 0 \
-                else fft[-k3x, -k3y, -k3z]
-            temp = s1*s2*s3
-            sample += temp
-            norm += np.abs(temp)
+        s1 = fft1[k1x, k1y, k1z] if k1z >= 0 \
+            else np.conj(fft1[-k1x, -k1y, -k1z])
+        s2 = fft2[k2x, k2y, k2z] if k2z >= 0 \
+            else np.conj(fft2[-k2x, -k2y, -k2z])
+        s3 = np.conj(fft3[k3x, k3y, k3z]) if k3z >= 0 \
+            else fft3[-k3x, -k3y, -k3z]
+        sample = s1*s2*s3
+        norm = np.abs(sample)
         bispecbuf[idx] = sample
         binormbuf[idx] = norm
         countbuf[idx] = 1
@@ -509,6 +522,8 @@ def _compute_point2D(k1ind, k2ind, kcoords, ntheta, nk1, nk2, shape,
                      cthetabuf, countbuf, *ffts):
     kx, ky = kcoords[0], kcoords[1]
     Nx, Ny = shape[0], shape[1]
+    nffts = len(ffts)
+    fft1, fft2, fft3 = 3*[ffts[0]] if nffts == 1 else ffts
     for idx in nb.prange(count):
         n, m = k1ind[samp[idx] % nk1], k2ind[samp[idx] // nk1]
         k1x, k1y = kx[n], ky[n]
@@ -516,14 +531,11 @@ def _compute_point2D(k1ind, k2ind, kcoords, ntheta, nk1, nk2, shape,
         k3x, k3y = k1x+k2x, k1y+k2y
         if np.abs(k3x) > Nx//2 or np.abs(k3y) > Ny//2:
             continue
-        sample, norm = 0, 0
-        for fft in ffts:
-            s1 = fft[k1x, k1y] if k1y >= 0 else np.conj(fft[-k1x, -k1y])
-            s2 = fft[k2x, k2y] if k2y >= 0 else np.conj(fft[-k2x, -k2y])
-            s3 = np.conj(fft[k3x, k3y]) if k3y >= 0 else fft[-k3x, -k3y]
-            temp = s1*s2*s3
-            sample += temp
-            norm += np.abs(temp)
+        s1 = fft1[k1x, k1y] if k1y >= 0 else np.conj(fft1[-k1x, -k1y])
+        s2 = fft2[k2x, k2y] if k2y >= 0 else np.conj(fft2[-k2x, -k2y])
+        s3 = np.conj(fft3[k3x, k3y]) if k3y >= 0 else fft3[-k3x, -k3y]
+        sample = s1*s2*s3
+        norm = np.abs(sample)
         bispecbuf[idx] = sample
         binormbuf[idx] = norm
         countbuf[idx] = 1
@@ -557,12 +569,12 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    N = 20
+    N = 200
     np.random.seed(1234)
-    data = np.random.rand(N, N, N)+1
+    data = np.random.rand(N, N)+1
 
-    kmin, kmax = 1, 10
-    result = bispectrum(data, kmin=kmin, kmax=kmax,
+    kmin, kmax = 1, 100
+    result = bispectrum(data, nsamples=10000, kmin=kmin, kmax=kmax,
                         ntheta=9, progress=True, bench=True)
     bispec, bicoh, kn, theta, counts, omega = result
 
