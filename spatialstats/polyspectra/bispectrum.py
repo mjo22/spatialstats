@@ -29,7 +29,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     real :math:`u`
 
     .. math::
-        B(\mathbf{k}_1, \mathbf{k}_2) =
+        B(\mathbf{k}_1, \mathbf{k}_2, - \mathbf{k}_1 - \mathbf{k}_2) =
             \\langle\\tilde{u}(\mathbf{k}_1)\\tilde{u}(\mathbf{k}_2)
             \\tilde{u}^{*}(\mathbf{k}_1+\mathbf{k}_2)\\rangle,
 
@@ -38,7 +38,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     For a vector field, the bispectrum is a 3-tensor
 
     .. math::
-        B_{ijk}(\mathbf{k}_1, \mathbf{k}_2) =
+        B_{ijk}(\mathbf{k}_1, \mathbf{k}_2, - \mathbf{k}_1 - \mathbf{k}_2) =
             \\langle\\tilde{u}_i(\mathbf{k}_1)\\tilde{u}_j(\mathbf{k}_2)
             \\tilde{u}_k^{*}(\mathbf{k}_1+\mathbf{k}_2)\\rangle,
 
@@ -79,8 +79,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
 
     If the data is also statistically isotropic, then we can say that
     the bispectrum is only a function of scalar wavenumber,
-    :math:`B = B(k_1, k_2, k_3)`. In this case, :math:`B` accounts
-    for all degrees of freedom of the bispectrum. Use this implementation's
+    :math:`B = B(k_1, k_2, k_3)`. Use this implementation's
     variance estimates on the average over :math:`\\Omega`
     to test this assumption.
 

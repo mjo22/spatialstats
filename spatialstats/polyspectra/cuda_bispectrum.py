@@ -1200,11 +1200,11 @@ if __name__ == '__main__':
 
     N = 20
     np.random.seed(1234)
-    data = np.random.rand(N, N, N)+1
+    data = np.random.rand(N, N)+1
 
     kmin, kmax = 1, 10
-    result = bispectrum(data, kmin=kmin, kmax=kmax,
-                        ntheta=9, double=True, progress=True, bench=True)
+    result = bispectrum(data, data, data, kmin=kmin, kmax=kmax,
+                        ntheta=9, double=False, progress=True, bench=True)
     bispec, bicoh, kn, theta, counts, omega = result
 
     print(np.nansum(bispec), np.nansum(bicoh))
