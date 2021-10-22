@@ -23,13 +23,11 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     Parameters
     ----------
     u : `np.ndarray` or `cp.ndarray`
-        Scalar or vector field.
-        If vector data, pass arguments as ``u1, u2`` or
-        ``u1, u2, u3`` where ``ui`` is the ith vector component.
-        Each ``ui`` should be 2D or 3D (respectively), and
-        must have the same ``ui.shape`` and ``ui.dtype``.
-        The vector bispectrum will be computed as the sum over bispectra
-        of each component.
+        Scalar field or vector components to correlate.
+        If vector data, pass arguments as ``u1, u2, u3``,
+        where ``ui`` is a vector component.
+        Each ``ui`` can be 2D or 3D, and all must have the
+        same ``ui.shape`` and ``ui.dtype``.
     ntheta : `int`, optional
         Number of angular bins :math:`\\theta` between triangles
         formed by wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
@@ -116,9 +114,8 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
 
     if ndim not in [2, 3]:
         raise ValueError("Data must be 2D or 3D.")
-    if (ndim == 2 and ncomp not in [1, 2]) \
-       or (ndim == 3 and ncomp not in [1, 3]):
-        raise ValueError(f"{ncomp} components not valid for {ndim}-D data.")
+    if ncomp not in [1, 3]:
+        raise ValueError("Pass either 1 scalar field or 3 vector components.")
 
     # Geometry of output image
     kmax = int(max(shape)/2) if kmax is None else int(kmax)
@@ -635,9 +632,9 @@ __global__ void computePointVec3D(long* k1ind, long* k2ind,
                                   const long* samp, long count,
                                   complex<double>* bispecbuf, double* binormbuf,
                                   double* cthetabuf, double* countbuf,
-                                  const complex<double>* fftx,
-                                  const complex<double>* ffty,
-                                  const complex<double>* fftz) {
+                                  const complex<double>* fft1,
+                                  const complex<double>* fft2,
+                                  const complex<double>* fft3) {
 
     for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
          idx < count;
@@ -696,32 +693,32 @@ __global__ void computePointVec3D(long* k1ind, long* k2ind,
         long idx3 = (q3x*Ny + q3y)*Nz + q3z;
 
         // Sample correlation function
-        complex<double> sx, sy, sz;
-        complex<double> s1x, s1y, s1z, s2x, s2y, s2z, s3x, s3y, s3z;
+        complex<double> s;
+        complex<double> s1, s2, s3;
 
         if (cj1 == 1) {
-            s1x = conj(fftx[idx1]); s1y = conj(ffty[idx1]); s1z = conj(fftz[idx1]);
+            s1 = conj(fft1[idx1]);
         }
         else {
-            s1x = fftx[idx1]; s1y = ffty[idx1]; s1z = fftz[idx1];
+            s1 = fft1[idx1];
         }
         if (cj2 == 1) {
-            s2x = conj(fftx[idx2]); s2y = conj(ffty[idx2]); s2z = conj(fftz[idx2]);
+            s2 = conj(fft2[idx2]);
         }
         else {
-            s2x = fftx[idx2]; s2y = ffty[idx2]; s2z = fftz[idx2];
+            s2 = fft2[idx2];
         }
         if (cj3 == 1) {
-            s3x = fftx[idx3]; s3y = ffty[idx3]; s3z = fftz[idx3];
+            s3 = fft3[idx3];
         }
         else {
-            s3x = conj(fftx[idx3]); s3y = conj(ffty[idx3]); s3z = conj(fftz[idx3]);
+            s3 = conj(fft3[idx3]);
         }
 
-        sx = s1x*s2x*s3x; sy = s1y*s2y*s3y; sz = s1z*s2z*s3z;
+        s = s1*s2*s3;
 
-        bispecbuf[idx] = sx + sy + sz;
-        binormbuf[idx] = abs(sx) + abs(sy) + abs(sz);
+        bispecbuf[idx] = s;
+        binormbuf[idx] = abs(s);
         countbuf[idx] = 1;
 
     }
@@ -734,8 +731,9 @@ __global__ void computePointVec2D(const long* k1ind, const long* k2ind,
                                   short Nx, short Ny, const long* samp, long count,
                                   complex<double>* bispecbuf, double* binormbuf,
                                   double* cthetabuf, double* countbuf,
-                                  const complex<double>* fftx,
-                                  const complex<double>* ffty) {
+                                  const complex<double>* fft1,
+                                  const complex<double>* fft2,
+                                  const complex<double>* fft3) {
 
     for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
          idx < count;
@@ -791,32 +789,32 @@ __global__ void computePointVec2D(const long* k1ind, const long* k2ind,
         long idx3 = (q3x*Ny + q3y);
 
         // Sample correlation function
-        complex<double> sx, sy;
-        complex<double> s1x, s1y, s2x, s2y, s3x, s3y;
+        complex<double> s;
+        complex<double> s1, s2, s3;
 
         if (cj1 == 1) {
-            s1x = conj(fftx[idx1]); s1y = conj(ffty[idx1]);
+            s1 = conj(fft1[idx1]);
         }
         else {
-            s1x = fftx[idx1]; s1y = ffty[idx1];
+            s1 = fft1[idx1];
         }
         if (cj2 == 1) {
-            s2x = conj(fftx[idx2]); s2y = conj(ffty[idx2]);
+            s2 = conj(fft2[idx2]);
         }
         else {
-            s2x = fftx[idx2]; s2y = ffty[idx2];
+            s2 = fft2[idx2];
         }
         if (cj3 == 1) {
-            s3x = fftx[idx3]; s3y = ffty[idx3];
+            s3 = fft3[idx3];
         }
         else {
-            s3x = conj(fftx[idx3]); s3y = conj(ffty[idx3]);
+            s3 = conj(fft3[idx3]);
         }
 
-        sx = s1x*s2x*s3x; sy = s1y*s2y*s3y;
+        s = s1*s2*s3;
 
-        bispecbuf[idx] = sx + sy;
-        binormbuf[idx] = abs(sx) + abs(sy);
+        bispecbuf[idx] = s;
+        binormbuf[idx] = abs(s);
         countbuf[idx] = 1;
 
     }
@@ -989,9 +987,9 @@ __global__ void computePointVec3Df(const long* k1ind, const long* k2ind,
                                    const long* samp, long count,
                                    complex<float>* bispecbuf, float* binormbuf,
                                    float* cthetabuf, float* countbuf,
-                                   const complex<float>* fftx,
-                                   const complex<float>* ffty,
-                                   const complex<float>* fftz) {
+                                   const complex<float>* fft1,
+                                   const complex<float>* fft2,
+                                   const complex<float>* fft3) {
 
     for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
          idx < count;
@@ -1050,33 +1048,32 @@ __global__ void computePointVec3Df(const long* k1ind, const long* k2ind,
         long idx3 = (q3x*Ny + q3y)*Nz + q3z;
 
         // Sample correlation function
-        complex<float> sx, sy, sz;
-        complex<float> s1x, s1y, s1z, s2x, s2y, s2z, s3x, s3y, s3z;
+        complex<float> s;
+        complex<float> s1, s2, s3;
 
         if (cj1 == 1) {
-            s1x = conj(fftx[idx1]); s1y = conj(ffty[idx1]); s1z = conj(fftz[idx1]);
+            s1 = conj(fft1[idx1]);
         }
         else {
-            s1x = fftx[idx1]; s1y = ffty[idx1]; s1z = fftz[idx1];
+            s1 = fft1[idx1];
         }
         if (cj2 == 1) {
-            s2x = conj(fftx[idx2]); s2y = conj(ffty[idx2]); s2z = conj(fftz[idx2]);
+            s2 = conj(fft2[idx2]);
         }
         else {
-            s2x = fftx[idx2]; s2y = ffty[idx2]; s2z = fftz[idx2];
+            s2 = fft2[idx2];
         }
         if (cj3 == 1) {
-            s3x = fftx[idx3]; s3y = ffty[idx3]; s3z = fftz[idx3];
+            s3 = fft3[idx3];
         }
         else {
-            s3x = conj(fftx[idx3]); s3y = conj(ffty[idx3]); s3z = conj(fftz[idx3]);
+            s3 = conj(fft3[idx3]);
         }
 
-        sx = s1x*s2x*s3x; sy = s1y*s2y*s3y; sz = s1z*s2z*s3z;
+        s = s1*s2*s3;
 
-
-        bispecbuf[idx] = sx + sy + sz;
-        binormbuf[idx] = abs(sx) + abs(sy) + abs(sz);
+        bispecbuf[idx] = s;
+        binormbuf[idx] = abs(s);
         countbuf[idx] = 1;
 
     }
@@ -1088,8 +1085,9 @@ __global__ void computePointVec2Df(const long* k1ind, const long* k2ind,
                                    short Nx, short Ny, const long* samp, long count,
                                    complex<float>* bispecbuf, float* binormbuf,
                                    float* cthetabuf, float* countbuf,
-                                   const complex<float>* fftx,
-                                   const complex<float>* ffty) {
+                                   const complex<float>* fft1,
+                                   const complex<float>* fft2,
+                                   const complex<float>* fft3) {
 
     for (long idx = blockDim.x * blockIdx.x + threadIdx.x;
          idx < count;
@@ -1145,32 +1143,32 @@ __global__ void computePointVec2Df(const long* k1ind, const long* k2ind,
         long idx3 = (q3x*Ny + q3y);
 
         // Sample correlation function
-        complex<float> sx, sy;
-        complex<float> s1x, s1y, s2x, s2y, s3x, s3y;
+        complex<float> s;
+        complex<float> s1, s2, s3;
 
         if (cj1 == 1) {
-            s1x = conj(fftx[idx1]); s1y = conj(ffty[idx1]);
+            s1 = conj(fft1[idx1]);
         }
         else {
-            s1x = fftx[idx1]; s1y = ffty[idx1];
+            s1 = fft1[idx1];
         }
         if (cj2 == 1) {
-            s2x = conj(fftx[idx2]); s2y = conj(ffty[idx2]);
+            s2 = conj(fft2[idx2]);
         }
         else {
-            s2x = fftx[idx2]; s2y = ffty[idx2];
+            s2 = fft2[idx2];
         }
         if (cj3 == 1) {
-            s3x = fftx[idx3]; s3y = ffty[idx3];
+            s3 = fft3[idx3];
         }
         else {
-            s3x = conj(fftx[idx3]); s3y = conj(ffty[idx3]);
+            s3 = conj(fft3[idx3]);
         }
 
-        sx = s1x*s2x*s3x; sy = s1y*s2y*s3y;
+        s = s1*s2*s3;
 
-        bispecbuf[idx] = sx + sy;
-        binormbuf[idx] = abs(sx) + abs(sy);
+        bispecbuf[idx] = s;
+        binormbuf[idx] = abs(s);
         countbuf[idx] = 1;
 
     }
@@ -1202,11 +1200,11 @@ if __name__ == '__main__':
 
     N = 20
     np.random.seed(1234)
-    data = np.random.rand(N, N, N)+1
+    data = np.random.rand(N, N)+1
 
     kmin, kmax = 1, 10
-    result = bispectrum(data, kmin=kmin, kmax=kmax,
-                        ntheta=9, double=True, progress=True, bench=True)
+    result = bispectrum(data, data, data, kmin=kmin, kmax=kmax,
+                        ntheta=9, double=False, progress=True, bench=True)
     bispec, bicoh, kn, theta, counts, omega = result
 
     print(np.nansum(bispec), np.nansum(bicoh))
