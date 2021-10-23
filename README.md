@@ -10,8 +10,8 @@ If you have a routine that you think would fit in this package, please do reach 
 ### polyspectra ###
 Calculate the bispectrum and power spectrum of 2D and 3D grids.
 
-### points ###
-Calculate statistics about the multi-scale structure of 2D and 3D point distributions, like the spatial distribution function and structure factor.
+### particles ###
+Calculate statistics about the multi-scale structure of 2D and 3D particle distributions, like the spatial distribution function and structure factor.
 
 ## GPU usage ##
 
