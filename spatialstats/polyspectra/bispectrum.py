@@ -395,6 +395,7 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords, nsamples,
                         exclude, error, compute_point, *ffts):
     knyq = max(shape) // 2
     ntheta = costheta.size
+    nffts = len(ffts)
     bispec = np.full((ntheta, dim, dim), np.nan+1.j*np.nan, dtype=np.complex128)
     binorm = np.full((ntheta, dim, dim), np.nan, dtype=np.float64)
     counts = np.full((ntheta, dim, dim), np.nan, dtype=np.float64)
@@ -407,7 +408,8 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords, nsamples,
         k1 = kn[i]
         k1ind = k1bins[i]
         nk1 = k1ind.size
-        for j in range(i+1):
+        dim2 = dim if nffts > 1 else i+1
+        for j in range(dim2):
             k2 = kn[j]
             if ntheta == 1 and (exclude and k1 + k2 > knyq):
                 continue
@@ -433,13 +435,15 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords, nsamples,
                           *ffts)
             if ntheta == 1:
                 _fill_sum(i, j, bispec, binorm, counts, stderr,
-                          bispecbuf, binormbuf, countbuf, error)
+                          bispecbuf, binormbuf, countbuf, nffts, error)
             else:
                 binned = np.searchsorted(costheta, cthetabuf)
                 _fill_binned_sum(i, j, ntheta, binned, bispec, binorm,
                                  counts, stderr, bispecbuf, binormbuf,
-                                 countbuf, error)
-            omega[i, j], omega[j, i] = nk1*nk2, nk1*nk2
+                                 countbuf, nffts, error)
+            omega[i, j] = nk1*nk2
+            if nffts == 1:
+                omega[j, i] = nk1*nk2
         if progress:
             with nb.objmode():
                 _printProgressBar(i, dim-1)
@@ -448,29 +452,39 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords, nsamples,
 
 @nb.njit(parallel=True, cache=True)
 def _fill_sum(i, j, bispec, binorm, counts, stderr,
-              bispecbuf, binormbuf, countbuf, error):
+              bispecbuf, binormbuf, countbuf, nffts, error):
     N = countbuf.sum()
     norm = binormbuf.sum()
     value = bispecbuf.sum()
-    bispec[0, i, j], bispec[0, j, i] = value, value
-    binorm[0, i, j], binorm[0, j, i] = norm, norm
-    counts[0, i, j], counts[0, j, i] = N, N
+    bispec[0, i, j] = value
+    binorm[0, i, j] = norm
+    counts[0, i, j] = N
+    if nffts == 1:
+        bispec[0, j, i] = value
+        binorm[0, j, i] = norm
+        counts[0, j, i] = N
     if error and N > 1:
         variance = np.abs(bispecbuf - (value / N))**2
         err = np.sqrt(variance.sum() / (N*(N - 1)))
-        stderr[0, i, j], stderr[0, j, i] = err, err
+        stderr[0, i, j] = err
+        if nffts == 1:
+            stderr[0, j, i] = err
 
 
 @nb.njit(parallel=True, cache=True)
 def _fill_binned_sum(i, j, ntheta, binned, bispec, binorm, counts,
-                     stderr, bispecbuf, binormbuf, countbuf, error):
+                     stderr, bispecbuf, binormbuf, countbuf, nffts, error):
     N = np.bincount(binned, weights=countbuf, minlength=ntheta)
     norm = np.bincount(binned, weights=binormbuf, minlength=ntheta)
     value = np.bincount(binned, weights=bispecbuf.real, minlength=ntheta) +\
         1.j*np.bincount(binned, weights=bispecbuf.imag, minlength=ntheta)
-    bispec[:, i, j], bispec[:, j, i] = value, value
-    binorm[:, i, j], binorm[:, j, i] = norm, norm
-    counts[:, i, j], counts[:, j, i] = N, N
+    bispec[:, i, j] = value
+    binorm[:, i, j] = norm
+    counts[:, i, j] = N
+    if nffts == 1:
+        bispec[:, j, i] = value
+        binorm[:, j, i] = norm
+        counts[:, j, i] = N
     if error:
         variance = np.zeros_like(countbuf)
         for n in range(ntheta):
@@ -479,7 +493,9 @@ def _fill_binned_sum(i, j, ntheta, binned, bispec, binorm, counts,
                 mean = value[n] / N[n]
                 variance[idxs] = np.abs(bispecbuf[idxs] - mean)**2 / (N[n]*(N[n]-1))
         err = np.sqrt(np.bincount(binned, weights=variance, minlength=ntheta))
-        stderr[:, i, j], stderr[:, j, i] = err, err
+        stderr[:, i, j] = err
+        if nffts == 1:
+            stderr[:, j, i] = err
 
 
 @nb.njit(parallel=True, cache=True)
@@ -489,7 +505,7 @@ def _compute_point3D(k1ind, k2ind, kcoords, ntheta, nk1, nk2, shape,
     kx, ky, kz = kcoords[0], kcoords[1], kcoords[2]
     Nx, Ny, Nz = shape[0], shape[1], shape[2]
     nffts = len(ffts)
-    fft1, fft2, fft3 = 3*[ffts[0]] if nffts == 1 else ffts
+    fft1, fft2, fft3 = [ffts[0], ffts[0], ffts[0]] if nffts == 1 else ffts
     for idx in nb.prange(count):
         n, m = k1ind[samp[idx] % nk1], k2ind[samp[idx] // nk1]
         k1x, k1y, k1z = kx[n], ky[n], kz[n]
@@ -522,7 +538,7 @@ def _compute_point2D(k1ind, k2ind, kcoords, ntheta, nk1, nk2, shape,
     kx, ky = kcoords[0], kcoords[1]
     Nx, Ny = shape[0], shape[1]
     nffts = len(ffts)
-    fft1, fft2, fft3 = 3*[ffts[0]] if nffts == 1 else ffts
+    fft1, fft2, fft3 = [ffts[0], ffts[0], ffts[0]] if nffts == 1 else ffts
     for idx in nb.prange(count):
         n, m = k1ind[samp[idx] % nk1], k2ind[samp[idx] // nk1]
         k1x, k1y = kx[n], ky[n]

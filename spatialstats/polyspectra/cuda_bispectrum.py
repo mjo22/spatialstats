@@ -360,6 +360,7 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords,
     knyq = max(shape) // 2
     shape = [cp.int16(Ni) for Ni in shape]
     ntheta = costheta.size
+    nffts = len(ffts)
     if double:
         float, complex = cp.float64, cp.complex128
     else:
@@ -378,7 +379,8 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords,
         k1 = kn[i]
         k1ind = k1bins[i]
         nk1 = k1ind.size
-        for j in range(i+1):
+        dim2 = dim if nffts > 1 else i+1
+        for j in range(dim2):
             k2 = kn[j]
             if ntheta == 1 and (exclude and k1 + k2 > knyq):
                 continue
@@ -410,13 +412,15 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords,
                                            *ffts))
             if ntheta == 1:
                 _fill_sum(i, j, bispec, binorm, counts, stderr,
-                          bispecbuf, binormbuf, countbuf, error)
+                          bispecbuf, binormbuf, countbuf, nffts, error)
             else:
                 binned = cp.searchsorted(costheta, cthetabuf)
                 _fill_binned_sum(i, j, ntheta, binned,
                                  bispec, binorm, counts, stderr,
-                                 bispecbuf, binormbuf, countbuf, error)
-            omega[i, j], omega[j, i] = nk1*nk2, nk1*nk2
+                                 bispecbuf, binormbuf, countbuf, nffts, error)
+            omega[i, j] = nk1*nk2
+            if nffts == 1:
+                omega[j, i] = nk1*nk2
             del bispecbuf, binormbuf, countbuf, samp
             mempool.free_all_blocks()
             pinned_mempool.free_all_blocks()
@@ -427,28 +431,38 @@ def _compute_bispectrum(k1bins, k2bins, kn, costheta, kcoords,
 
 
 def _fill_sum(i, j, bispec, binorm, counts, stderr,
-              bispecbuf, binormbuf, countbuf, error):
+              bispecbuf, binormbuf, countbuf, nffts, error):
     N = countbuf.sum()
     norm = binormbuf.sum()
     value = bispecbuf.sum()
-    bispec[0, i, j], bispec[0, j, i] = value, value
-    binorm[0, i, j], binorm[0, j, i] = norm, norm
-    counts[0, i, j], counts[0, j, i] = N, N
+    bispec[0, i, j] = value
+    binorm[0, i, j] = norm
+    counts[0, i, j] = N
+    if nffts == 1:
+        bispec[0, j, i] = value
+        binorm[0, j, i] = norm
+        counts[0, j, i] = N
     if error and N > 1:
         variance = cp.abs(bispecbuf - (value / N))**2
         err = np.sqrt(variance.sum() / (N*(N - 1)))
-        stderr[0, i, j], stderr[0, j, i] = err, err
+        stderr[0, i, j] = err
+        if nffts == 1:
+            stderr[0, j, i] = err
 
 
 def _fill_binned_sum(i, j, ntheta, binned, bispec, binorm, counts,
-                     stderr, bispecbuf, binormbuf, countbuf, error):
+                     stderr, bispecbuf, binormbuf, countbuf, nffts, error):
     N = cp.bincount(binned, weights=countbuf, minlength=ntheta)
     norm = cp.bincount(binned, weights=binormbuf, minlength=ntheta)
     value = cp.bincount(binned, weights=bispecbuf.real, minlength=ntheta) +\
         1.j*cp.bincount(binned, weights=bispecbuf.imag, minlength=ntheta)
-    bispec[:, i, j], bispec[:, j, i] = value, value
-    binorm[:, i, j], binorm[:, j, i] = norm, norm
-    counts[:, i, j], counts[:, j, i] = N, N
+    bispec[:, i, j] = value
+    binorm[:, i, j] = norm
+    counts[:, i, j] = N
+    if nffts == 1:
+        bispec[:, j, i] = value
+        binorm[:, j, i] = norm
+        counts[:, j, i] = N
     if error:
         variance = cp.zeros_like(countbuf)
         for n in range(ntheta):
@@ -457,7 +471,9 @@ def _fill_binned_sum(i, j, ntheta, binned, bispec, binorm, counts,
                 mean = value[n] / N[n]
                 variance[idxs] = cp.abs(bispecbuf[idxs] - mean)**2 / (N[n]*(N[n]-1))
         err = cp.sqrt(cp.bincount(binned, weights=variance, minlength=ntheta))
-        stderr[:, i, j], stderr[:, j, i] = err, err
+        stderr[:, i, j] = err
+        if nffts == 1:
+            stderr[:, j, i] = err
 
 
 _module = cp.RawModule(code=r'''
@@ -1200,10 +1216,11 @@ if __name__ == '__main__':
 
     N = 20
     np.random.seed(1234)
-    data = np.random.rand(N, N)+1
+    datax = np.random.rand(N, N)+1
+    datay = np.random.rand(N, N)+1
 
     kmin, kmax = 1, 10
-    result = bispectrum(data, data, data, kmin=kmin, kmax=kmax,
+    result = bispectrum(datax, datay, datax, kmin=kmin, kmax=kmax,
                         ntheta=9, double=False, progress=True, bench=True)
     bispec, bicoh, kn, theta, counts, omega = result
 
