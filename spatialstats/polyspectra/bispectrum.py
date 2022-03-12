@@ -68,14 +68,13 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     :math:`\Omega` is the set of
     (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`) pairs such that
     :math:`|\mathbf{k}_1| \in [k_1, k_1+1)`,
-    :math:`|\mathbf{k}_2| \in [k_2, k_2+1)` for
-    :math:`(\mathbf{k}_2)_z > 0`, and
+    :math:`|\mathbf{k}_2| \in [k_2, k_2+1)`, and
     :math:`\\arccos{(\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2)} \in [\\theta, \\theta+\\Delta \\theta)`.
     We only consider :math:`(\mathbf{k}_2)_z > 0` to include
     (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`) contributions
     but not their complex conjugates from
-    (:math:`-\mathbf{k}_1`, :math:`-\mathbf{k}_2`). We want to preserve
-    the imaginary component of :math:`B`.
+    (:math:`-\mathbf{k}_1`, :math:`-\mathbf{k}_2`). The bispectrum defined
+    over :math:`\Omega` is real so this improves performance.
 
     If the data is also statistically isotropic, then we can say that
     the bispectrum is only a function of scalar wavenumber,
