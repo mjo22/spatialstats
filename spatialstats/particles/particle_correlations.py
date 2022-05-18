@@ -28,14 +28,15 @@ def fourier_corr(gr, r, N, boxsize, q=None, **kwargs):
     the pair correlation function :math:`G(r)` of a set of :math:`N`
     particle positions in a 2D or 3D periodic box with volume :math:`V`.
 
-    The fourier-space pairwise correlation function in 2D and 3D are fourier
-    transforms of :math:`G(r)`, with the angular integrals simplified to
+    The fourier-space pairwise correlation function in 3D and 2D are fourier
+    transforms of :math:`G(r)`. Explicitly performing the angular integrals,
+    in 3D this is
 
     .. math::
 
         S(q) = 4\\pi \\rho \int dr \ r^2 \ j_0(qr) G(r)
 
-    and
+    and in 2D
 
     .. math::
 
