@@ -42,7 +42,7 @@ def fourier_corr(gr, r, N, boxsize, q=None, **kwargs):
         S(q) = 2\\pi \\rho \int dr \ r \ J_{0}(qr) G(r),
 
     where :math:`\\rho = N/V` and :math:`J_{0}, \ j_{0}` are the
-    :math:`0`th order bessel and spherical bessel functions, respectively.
+    zeroth order bessel and spherical bessel functions, respectively.
 
     If finding the structure factor for the radial distribution function
     :math:`g(r)`, conventionally :math:`S` is computed by setting
