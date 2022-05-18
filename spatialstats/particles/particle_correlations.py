@@ -1,9 +1,9 @@
 """
-Routines to calculate the 2-point spatial distribution function
-:math:`g(\\mathbf{r})` for displacements between point and
+Routines to calculate 2-point correlation functions
+:math:`G(\\mathbf{r}), \ S(\\mathbf{q})` for point and
 rod-like particle pairs.
-Can reduce to the usual isotropic :math:`g(r)` with the
-corresponding structure factor :math:`S(q)`.
+Can reduce to the usual isotropic :math:`G(r)` with the
+corresponding fourier representation :math:`S(q)`.
 
 See `here <https://en.wikipedia.org/wiki/Radial_distribution_function>`_
 to learn more.
@@ -22,34 +22,40 @@ from scipy.special import jv
 from time import time
 
 
-def structure_factor(gr, r, N, boxsize, q=None, **kwargs):
+def fourier_corr(gr, r, N, boxsize, q=None, **kwargs):
     """
-    Calculate the isotropic structure factor :math:`S(q)` from
-    the radial distribution function :math:`g(r)` of a set of :math:`N` 
+    Calculate the isotropic fourier correlation function :math:`S(q)` from
+    the pair correlation function :math:`G(r)` of a set of :math:`N`
     particle positions in a 2D or 3D periodic box with volume :math:`V`.
 
-    The structure factor in 3D is computed as
+    The fourier-space pairwise correlation function in 2D and 3D are fourier
+    transforms of :math:`G(r)`, simplified to
 
     .. math::
 
-        S(q) = 1 + 4\\pi \\rho \\frac{1}{q} \int dr \ r \ \\textrm{sin}(qr) [g(r) - 1]
+        S(q) = 1 + 4\\pi \\rho \int dr \ r^2 \ j_0(qr) G(r)
 
-    and in 2D
+    and
 
     .. math::
 
-        S(q) = 1 + 2\\pi \\rho \int dr \ r \ J_{0}(qr) [g(r) - 1],
+        S(q) = 1 + 2\\pi \\rho \int dr \ r \ J_{0}(qr) G(r),
 
-    where :math:`\\rho = N/V` and :math:`J_{0}` is the 0th bessel function of the first kind.
+    where :math:`\\rho = N/V` and :math:`J_{0}, \ j_{0}` are the 0th
+    order bessel function and spherical bessel functions, respectively.
+
+    If finding the structure factor for the radial distribution function
+    :math:`g(r)`, conventionally :math:`S` is computed by setting
+    :math:`G(r) = g(r) - 1` because :math:`g` decays to 1.
 
     Parameters
     ----------
     gr : `np.ndarray`
-        The radial distribution function :math:`g(r)` from
-        :ref:`spatialstats.particles.sdf<sdf>`.
+        The pairwise correlation function :math:`G(r)` from
+        :ref:`spatialstats.particles.corr<corr>`.
     r : `np.ndarray`
-        The domain of :math:`g(r)` from
-        :ref:`spatialstats.particles.sdf<sdf>`.
+        The domain of :math:`G(r)` from
+        :ref:`spatialstats.particles.corr<corr>`.
     N : `int`
         The number of particles :math:`N`.
     boxsize : `list` of `float`
@@ -64,7 +70,7 @@ def structure_factor(gr, r, N, boxsize, q=None, **kwargs):
     Returns
     -------
     Sq : `np.ndarray`
-        The structure factor :math:`S(q)`.
+        The fourier 2-point correlation function :math:`S(q)`.
     q : `np.ndarray`
         Wavenumber bins :math:`q`.
     """
@@ -79,13 +85,14 @@ def structure_factor(gr, r, N, boxsize, q=None, **kwargs):
         q = np.arange(dq, 200*dq, dq)
 
     def S(q):
-        '''Integrand for isotropic structure factor'''
+        '''Integrand for isotropic correlation function'''
         rho = N/np.prod(boxsize)
+        g = gr-1 if spatial else gr
         if ndim == 3:
-            f = np.sin(q*r)*r*(gr-1)
+            f = np.sin(q*r)*r*g
             return 1+4*np.pi*rho*simps(f, r)/q
         else:
-            f = jv(0, q*r)*r*(gr-1)
+            f = jv(0, q*r)*r*g
             return 1+2*np.pi*rho*simps(f, r)
 
     # Integrate for all q
@@ -97,29 +104,42 @@ def structure_factor(gr, r, N, boxsize, q=None, **kwargs):
     return Sq, q
 
 
-def sdf(positions, boxsize, orientations=None, rmin=None, rmax=None,
-        nr=100, nphi=None, ntheta=None, int=np.int32, float=np.float64,
-        bench=False, **kwargs):
+def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rmax=None,
+         nr=100, nphi=None, ntheta=None, int=np.int32, float=np.float64,
+         bench=False, **kwargs):
     """
-    .. _sdf:
+    .. _corr:
 
-    Calculate the spatial distribution function
-    :math:`g(r, \\phi)` or :math:`g(r, \\phi, \\theta)`
-    for a set of :math:`N` point-like or rod-like particles
-    :math:`\\mathbf{r}_i` in a 2D or 3D periodic box.
-    :math:`(r, \\phi, \\theta)` are the spherical coordinates for
-    displacement vectors between particle pairs
-    :math:`\\mathbf{r}_{ij} = \\mathbf{r}_i - \\mathbf{r}_j`.
+    Compute the 2-point correlaton function
+    :math:`G(\\mathbf{r})` for a set of :math:`N`
+    point-like or rod-like particles
+    :math:`\\mathbf{r}_i` in a 2D or 3D periodic box, where
+    :math:`\\mathbf{r} = (r, \\phi, \\theta)` are the spherical
+    coordinates for displacement vectors between particle pairs
+    :math:`\\mathbf{r} = \\mathbf{r}_i - \\mathbf{r}_j`.
     :math:`\\phi` is the azimuthal angle and :math:`\\theta` is
     the inclination angle.
 
+    If ``weight = None``, :math:`G(\\mathbf{r} = g(\\mathbf{r})`,
+    i.e. the spatial distribution function. This is computed as
+    :math:`g(\\mathbf{r}) = \\langle \\delta(\\mathbf{r}_j - \\mathbf{r}_i) \\rangle`,
+    where :math:`\\langle ... \\rangle is an average over particle pair displacements
+    :math:`\\mathbf{r}_j - \\mathbf{r}_i` in a periodic box for each origin
+    :math:`\\mathbf{r}_i`.
+
+    Generally, if the ``weights`` argument is a vector defined for all
+    particles :math:`\\mathbf{w}_i`, the pair correlation
+    function is computed as
+    :math:`G(\\mathbf{r}) = \\langle (\\mathbf{w}_i \\cdot \\mathbf{w}_j)^z \\rangle`,
+    where :math:`z` is some exponent.
+
     If particles orientations :math:`\\mathbf{p}_i` are included,
-    instead define :math:`(r, \\phi, \\theta)` as the
+    define :math:`(r, \\phi, \\theta)` as the rotated
     coordinate system with :math:`\\mathbf{p}_i` pointed in the
     :math:`+z` direction.
 
     .. note::
-        Reduces to the 1D distribution function :math:`g(r)`
+        Reduces to the 1D radial distribution function :math:`g(r)`
         when ``nphi = None`` and ``ntheta = None``.
 
     Parameters
@@ -132,6 +152,12 @@ def sdf(positions, boxsize, orientations=None, rmin=None, rmax=None,
         The rectangular domain over which
         to apply periodic boundary conditions.
         Passed to ``scipy.spatial.cKDTree``.
+    weights : `np.ndarray`, shape `(N, ndim)`, optional
+        Particle vectors :math:`\\mathbf{w}_i` over which
+        to calculate pair correlation function.
+    z : `int`
+        Exponent in averaging
+        :math:`\\langle (\\mathbf{w}_i \\cdot \\mathbf{w}_j)^z \\rangle`.
     orientations : `np.ndarray`, shape `(N, ndim)`, optional
         Particle orientation vectors :math:`\\mathbf{p}_i`.
         Vectors should be unitary, but they will be
@@ -179,10 +205,16 @@ def sdf(positions, boxsize, orientations=None, rmin=None, rmax=None,
 
     if orientations is not None:
         if orientations.shape != (N, ndim):
-            msg = f"Shape of orientations array must match positions array {(N, ndim)}"
+            msg = f"Shape of orientations must match positions array {(N, ndim)}"
             raise ValueError(msg)
     else:
-        orientations = np.array([0])
+        orientations = np.zeros((1, ndim), dtype=float)
+    if weights is not None:
+        if weights.shape != (N, ndim):
+            msg = f"Shape of weights must match positions array {(N, ndim)}"
+            raise ValueError(msg)
+    else:
+        weights = np.zeros((1, ndim), float)
 
     # Binning keyword args
     rmin = 0 if rmin is None else rmin
@@ -213,21 +245,22 @@ def sdf(positions, boxsize, orientations=None, rmin=None, rmax=None,
         print(f"Counted {npairs} pairs: {t1-t0:.04f} s")
 
     # Get displacements
-    args = (positions, orientations, boxsize, rmax, nr, nphi, ntheta)
+    args = (positions, weights, z, orientations, boxsize, rmax, nr, nphi, ntheta)
     rbuff = np.zeros((2*npairs, ncoords), dtype=float)
-    rvec = _get_displacements(rbuff, pairs, *args)
+    wbuff = np.zeros((2*npairs), dtype=float) if weights.shape[0] > 1 else np.zeros([0])
+    rij, wiwj = _get_displacements(rbuff, wbuff, pairs, *args)
 
-    # Get g(r, phi)
+    # Get correlation function
     r_n = np.linspace(rmin, rmax, nr+1)
     phi_m = 2*np.pi*np.linspace(0, 1, nphi+1) - np.pi
     theta_l = np.pi*np.linspace(0, 1, ntheta+1)
-    g = _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l, **kwargs)
+    g = _get_distribution(rij, wiwj, N, boxsize, r_n, phi_m, theta_l, **kwargs)
 
     if bench:
         t2 = time()
         print(f"Displacement calculation: {t2-t1:.04f} s")
 
-    del rvec, rbuff, pairs
+    del rij, wiwj, rbuff, pairs
 
     out = [g, r_n[:-1], phi_m[:-1]]
     if ndim == 3:
@@ -236,15 +269,16 @@ def sdf(positions, boxsize, orientations=None, rmin=None, rmax=None,
     return tuple(out)
 
 
-def _get_distribution(rvec, N, boxsize, r_n, phi_m, theta_l, **kwargs):
-    '''Generate spatial distribution function'''
+def _get_distribution(rij, wiwj, N, boxsize, r_n, phi_m, theta_l, **kwargs):
+    '''Generate pair correlation function'''
     # Prepare arguments
     bins = []
     for b in [r_n, phi_m, theta_l]:
         if b.size > 2:
             bins.append(b)
     # Bin
-    count, edges = np.histogramdd(rvec, bins=bins)
+    weights = wiwj if wiwj.size > 1 else None
+    count, edges = np.histogramdd(rij, bins=bins, weights=weights, **kwargs)
     # Scale with bin volume and density
     ndim = boxsize.size
     density = N/(np.prod(boxsize))
@@ -270,8 +304,8 @@ def _get_volume(count, r, phi, theta, ndim):
 
 
 @nb.njit(parallel=True, cache=True)
-def _get_displacements(rbuff, pairs, r, p, boxsize, rmax, nr, nphi, ntheta):
-    '''Get displacements between pairs'''
+def _get_displacements(rbuff, wbuff, pairs, r, w, z, p, boxsize, rmax, nr, nphi, ntheta):
+    '''Get displacements between pairs and correlation weights'''
     rotate = True if p.shape == r.shape else False
     nthreads = pairs.shape[0]
     for idx1 in nb.prange(nthreads):
@@ -291,7 +325,9 @@ def _get_displacements(rbuff, pairs, r, p, boxsize, rmax, nr, nphi, ntheta):
                 p_i = p[i] / _norm(p[i])
                 R = _rotation_matrix(p_i)
                 r_ij = _matvec(R, r_ij)
-            # Fill buffer
+            # Fill buffers
+            if wbuff.size > 1:
+                wbuff[index] = _dot(w[i], w[j])**z
             k = 0
             norm = _norm(r_ij)
             if nr > 1:
@@ -302,7 +338,7 @@ def _get_displacements(rbuff, pairs, r, p, boxsize, rmax, nr, nphi, ntheta):
                 k += 1
             if ntheta > 1:
                 rbuff[index, k] = np.arccos(r_ij[2] / norm)
-    return rbuff
+    return rbuff, wbuff
 
 
 @nb.njit(cache=True)
@@ -395,7 +431,8 @@ def _norm(x):
 @nb.njit(cache=True)
 def _dot(a, b):
     dot = 0
-    for i in range(a.size):
+    n = a.size
+    for i in range(n):
         dot += a[i]*b[i]
     return dot
 
@@ -424,21 +461,26 @@ if __name__ == "__main__":
 
     from matplotlib import pyplot as plt
 
-    N = 5000
-    boxsize = [100, 100]
+    N = 200
+    boxsize = [10, 10, 10]
     np.random.seed(1234)
-    pos = np.random.rand(N, 2)*100
-    orient = np.ones((N, 2))
-    rmax = 20
+    pos = np.random.rand(N, 3)*100
+    #orient = np.ones((N, 3))
+    weights = np.random.rand(N, 3)*2 - 1
+    rmax = 5
+    orient = None
+    #weights = None
 
-    g, r, phi = sdf(pos, boxsize, rmax=rmax,
-                    orientations=orient, bench=True,
-                    nr=150, nphi=100)
+    g, r, phi, theta = corr(pos, boxsize, rmax=rmax,
+                            orientations=orient, z=2,
+                            weights=weights, bench=True,
+                            nr=150, ntheta=10)
 
     print(g.mean(), g.shape)
 
     if g.ndim == 1:
-        S, q = structure_factor(g, r, N, boxsize, qmin=0, qmax=100, dq=.5)
+        f = g-g.mean()
+        S, q = fourier_corr(f, r, N, boxsize)
         fig, axes = plt.subplots(ncols=2)
         axes[0].plot(r, g)
         axes[0].set_xlabel("$r$")
@@ -449,7 +491,7 @@ if __name__ == "__main__":
         plt.show()
     else:
         fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
-        angle = phi
+        angle = theta
         rmesh, amesh = np.meshgrid(r, angle)
         im = ax.contourf(amesh, rmesh, g.T, 100, cmap="plasma")
         ax.set_xlim((angle.min(), angle.max()))

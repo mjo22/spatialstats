@@ -1,10 +1,10 @@
 spatialstats.particles
 ======================
 
-Spatial distribution functions
+Particle correlation functions
 ------------------------------
 
-.. automodule:: spatialstats.particles.particle_cloud
+.. automodule:: spatialstats.particles.particle_correlations
    :members:
    :undoc-members:
    :show-inheritance:
