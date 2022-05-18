@@ -121,11 +121,12 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
     the inclination angle.
 
     If ``weight = None``, :math:`G(\\mathbf{r}) = g(\\mathbf{r})`,
-    i.e. the spatial distribution function. This is computed as
+    i.e. the spatial distribution function in the displacement
+    coordinate frame. This is computed as
     :math:`g(\\mathbf{r}) = \\langle \\delta(\\mathbf{r}_j - \\mathbf{r}_i) \\rangle`,
     where :math:`\\langle ... \\rangle` is an average over particle pair displacements
-    :math:`\\mathbf{r}_j - \\mathbf{r}_i` in a periodic box for each origin
-    :math:`\\mathbf{r}_i`.
+    :math:`\\mathbf{r}_j - \\mathbf{r}_i` in a periodic box summed over
+    each choice of origin :math:`\\mathbf{r}_i`.
 
     Generally, if the ``weights`` argument is a vector defined for all
     particles :math:`\\mathbf{w}_i`, the pair correlation
