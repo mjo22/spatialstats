@@ -29,24 +29,27 @@ def fourier_corr(gr, r, N, boxsize, q=None, **kwargs):
     particle positions in a 2D or 3D periodic box with volume :math:`V`.
 
     The fourier-space pairwise correlation function in 2D and 3D are fourier
-    transforms of :math:`G(r)`, simplified to
+    transforms of :math:`G(r)`, with the angular integrals simplified to
 
     .. math::
 
-        S(q) = 1 + 4\\pi \\rho \int dr \ r^2 \ j_0(qr) G(r)
+        S(q) = 4\\pi \\rho \int dr \ r^2 \ j_0(qr) G(r)
 
     and
 
     .. math::
 
-        S(q) = 1 + 2\\pi \\rho \int dr \ r \ J_{0}(qr) G(r),
+        S(q) = 2\\pi \\rho \int dr \ r \ J_{0}(qr) G(r),
 
     where :math:`\\rho = N/V` and :math:`J_{0}, \ j_{0}` are the
     :math:`0`th order bessel and spherical bessel functions, respectively.
 
     If finding the structure factor for the radial distribution function
     :math:`g(r)`, conventionally :math:`S` is computed by setting
-    :math:`G(r) = g(r) - 1` because :math:`g` decays to 1.
+    :math:`G(r) = g(r) - 1` because :math:`g` decays to 1. In this case
+    and in general for correlations that decay to some non-zero value,
+    subtract the asymptotic value from :math:`g` (i.e. the input to ``gr``)
+    when computing :math:`S`.
 
     Parameters
     ----------
@@ -87,13 +90,12 @@ def fourier_corr(gr, r, N, boxsize, q=None, **kwargs):
     def S(q):
         '''Integrand for isotropic correlation function'''
         rho = N/np.prod(boxsize)
-        g = gr-1 if spatial else gr
         if ndim == 3:
-            f = np.sin(q*r)*r*g
-            return 1+4*np.pi*rho*simps(f, r)/q
+            f = np.sin(q*r)*r*gr
+            return 4*np.pi*rho*simps(f, r)/q
         else:
-            f = jv(0, q*r)*r*g
-            return 1+2*np.pi*rho*simps(f, r)
+            f = jv(0, q*r)*r*gr
+            return 2*np.pi*rho*simps(f, r)
 
     # Integrate for all q
     Sq = []
@@ -473,9 +475,9 @@ if __name__ == "__main__":
     #weights = None
 
     g, r, phi, theta = corr(pos, boxsize, rmax=rmax,
-                            orientations=orient, z=2,
+                            orientations=orient, z=1,
                             weights=weights, bench=True,
-                            nr=150, ntheta=10)
+                            nr=150, ntheta=1)
 
     print(g.mean(), g.shape)
 
