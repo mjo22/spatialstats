@@ -41,8 +41,8 @@ def fourier_corr(gr, r, N, boxsize, q=None, **kwargs):
 
         S(q) = 1 + 2\\pi \\rho \int dr \ r \ J_{0}(qr) G(r),
 
-    where :math:`\\rho = N/V` and :math:`J_{0}, \ j_{0}` are the 0th
-    order bessel function and spherical bessel functions, respectively.
+    where :math:`\\rho = N/V` and :math:`J_{0}, \ j_{0}` are the
+    :math:`0`th order bessel and spherical bessel functions, respectively.
 
     If finding the structure factor for the radial distribution function
     :math:`g(r)`, conventionally :math:`S` is computed by setting
@@ -120,10 +120,10 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
     :math:`\\phi` is the azimuthal angle and :math:`\\theta` is
     the inclination angle.
 
-    If ``weight = None``, :math:`G(\\mathbf{r} = g(\\mathbf{r})`,
+    If ``weight = None``, :math:`G(\\mathbf{r}) = g(\\mathbf{r})`,
     i.e. the spatial distribution function. This is computed as
     :math:`g(\\mathbf{r}) = \\langle \\delta(\\mathbf{r}_j - \\mathbf{r}_i) \\rangle`,
-    where :math:`\\langle ... \\rangle is an average over particle pair displacements
+    where :math:`\\langle ... \\rangle` is an average over particle pair displacements
     :math:`\\mathbf{r}_j - \\mathbf{r}_i` in a periodic box for each origin
     :math:`\\mathbf{r}_i`.
 
@@ -140,7 +140,7 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
 
     .. note::
         Reduces to the 1D radial distribution function :math:`g(r)`
-        when ``nphi = None`` and ``ntheta = None``.
+        when ``nphi = None``, ``ntheta = None``, and ``weights = None``.
 
     Parameters
     ---------
@@ -185,10 +185,10 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
     Returns
     -------
     g : `np.ndarray`, shape `(nr, nphi, ntheta)`
-        Radial distribution function :math:`g(r, \\phi, \\theta)`.
+        Radial distribution function :math:`G(r, \\phi, \\theta)`.
         If the user does not bin for a certain coordinate,
-        ``g`` will not be 3 dimensional (e.g. if ``nphi = None``,
-        ``g`` will be shape ``(nr, ntheta)``).
+        ``G`` will not be 3 dimensional (e.g. if ``nphi = None``,
+        ``G`` will be shape ``(nr, ntheta)``).
     r : `np.ndarray`, shape `(nr,)`
         Left edges of radial bins :math:`r`.
     phi : `np.ndarray`, shape `(nphi,)`
