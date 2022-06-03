@@ -108,7 +108,7 @@ def fourier_corr(gr, r, N, boxsize, q=None, **kwargs):
 
 
 def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rmax=None,
-         nr=100, nphi=None, ntheta=None, int=np.int32, float=np.float64,
+         nr=100, nphi=None, ntheta=None, cos=True, int=np.int32, float=np.float64,
          bench=False, **kwargs):
     """
     .. _corr:
@@ -178,6 +178,9 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
         Number of points to bin in :math:`\\phi`.
     ntheta : `int`, optional
         Number of points to bin in :math:`\\theta`.
+    cos : `bool`, optional
+        Choose whether to bin in slices of :math:`\\cos\\theta`
+        or :math:`\\theta`. Default is :math:`\\cos\\theta`.
     int : `np.dtype`, optional
         Integer type for pair counting array.
         Lets the user relax memory requirements.
@@ -249,7 +252,8 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
         print(f"Counted {npairs} pairs: {t1-t0:.04f} s")
 
     # Get displacements
-    args = (positions, weights, z, orientations, boxsize, rmax, nr, nphi, ntheta)
+    args = (positions, weights, z, orientations, boxsize,
+            rmax, nr, nphi, ntheta, cos)
     rbuff = np.zeros((2*npairs, ncoords), dtype=float)
     wbuff = np.zeros((2*npairs), dtype=float) if weights.shape[0] > 1 else np.zeros([0])
     rij, wiwj = _get_displacements(rbuff, wbuff, pairs, *args)
@@ -257,8 +261,8 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
     # Get correlation function
     r_n = np.linspace(rmin, rmax, nr+1)
     phi_m = 2*np.pi*np.linspace(0, 1, nphi+1) - np.pi
-    theta_l = np.pi*np.linspace(0, 1, ntheta+1)
-    g = _get_distribution(rij, wiwj, N, boxsize, r_n, phi_m, theta_l, **kwargs)
+    theta_l = np.linspace(-1, 1, ntheta+1) if cos else np.pi*np.linspace(0, 1, ntheta+1)
+    g = _get_distribution(rij, wiwj, N, boxsize, r_n, phi_m, theta_l, cos, **kwargs)
 
     if bench:
         t2 = time()
@@ -273,7 +277,7 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
     return tuple(out)
 
 
-def _get_distribution(rij, wiwj, N, boxsize, r_n, phi_m, theta_l, **kwargs):
+def _get_distribution(rij, wiwj, N, boxsize, r_n, phi_m, theta_l, cos, **kwargs):
     '''Generate pair correlation function'''
     # Prepare arguments
     bins = []
@@ -286,13 +290,13 @@ def _get_distribution(rij, wiwj, N, boxsize, r_n, phi_m, theta_l, **kwargs):
     # Scale with bin volume and density
     ndim = boxsize.size
     density = N/(np.prod(boxsize))
-    vol = np.squeeze(_get_volume(count, r_n, phi_m, theta_l, ndim))
+    vol = np.squeeze(_get_volume(count, r_n, phi_m, theta_l, ndim, cos))
     g = count/(N*vol*density)
     return g
 
 
 @nb.njit(parallel=True, cache=True)
-def _get_volume(count, r, phi, theta, ndim):
+def _get_volume(count, r, phi, theta, ndim, cos):
     '''Get volume elements for (r, phi, theta) bins'''
     nr, nphi, ntheta = r.size-1, phi.size-1, theta.size-1
     vol = np.zeros((nr, nphi, ntheta))
@@ -303,12 +307,16 @@ def _get_volume(count, r, phi, theta, ndim):
             for l in range(ntheta):
                 vol[n, m, l] = dphi * dr
                 if ndim == 3:
-                    vol[n, m, l] *= np.cos(theta[l]) - np.cos(theta[l+1])
+                    if cos:
+                        vol[n, m, l] *= theta[l+1] - theta[l]
+                    else:
+                        vol[n, m, l] *= np.cos(theta[l]) - np.cos(theta[l+1])
     return vol
 
 
 @nb.njit(parallel=True, cache=True)
-def _get_displacements(rbuff, wbuff, pairs, r, w, z, p, boxsize, rmax, nr, nphi, ntheta):
+def _get_displacements(rbuff, wbuff, pairs, r, w, z, p, boxsize,
+                       rmax, nr, nphi, ntheta, cos):
     '''Get displacements between pairs and correlation weights'''
     rotate = True if p.shape == r.shape else False
     nthreads = pairs.shape[0]
@@ -341,7 +349,10 @@ def _get_displacements(rbuff, wbuff, pairs, r, w, z, p, boxsize, rmax, nr, nphi,
                 rbuff[index, k] = np.arctan2(r_ij[1], r_ij[0])
                 k += 1
             if ntheta > 1:
-                rbuff[index, k] = np.arccos(r_ij[2] / norm)
+                if cos:
+                    rbuff[index, k] = r_ij[2] / norm
+                else:
+                    rbuff[index, k] = np.arccos(r_ij[2] / norm)
     return rbuff, wbuff
 
 
@@ -468,17 +479,19 @@ if __name__ == "__main__":
     N = 200
     boxsize = [10, 10, 10]
     np.random.seed(1234)
-    pos = np.random.rand(N, 3)*100
-    #orient = np.ones((N, 3))
+    pos = np.random.rand(N, 3)*10
+    orient = np.zeros((N, 3))
+    orient[:, 0] = 1
+    #orient = np.random.rand(N, 3)
     weights = np.random.rand(N, 3)*2 - 1
-    rmax = 5
-    orient = None
-    #weights = None
+    rmax = 10
+    cos = True
+    #orient = None
 
     g, r, phi, theta = corr(pos, boxsize, rmax=rmax,
-                            orientations=orient, z=1,
-                            weights=weights, bench=True,
-                            nr=150, ntheta=1)
+                            orientations=orient, z=2,
+                            weights=orient, bench=True,
+                            nr=100, ntheta=80, cos=cos)
 
     print(g.mean(), g.shape)
 
@@ -494,10 +507,14 @@ if __name__ == "__main__":
         axes[1].set_ylabel("$S(q)$")
         plt.show()
     else:
-        fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
-        angle = theta
-        rmesh, amesh = np.meshgrid(r, angle)
-        im = ax.contourf(amesh, rmesh, g.T, 100, cmap="plasma")
-        ax.set_xlim((angle.min(), angle.max()))
+        if not cos:
+            fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+            angle = theta
+            rmesh, amesh = np.meshgrid(r, angle)
+            im = ax.contourf(amesh, rmesh, g.T, np.linspace(0, 1, 10), cmap="plasma")
+            ax.set_xlim((angle.min(), angle.max()))
+        else:
+            fig, ax = plt.subplots()
+            im = ax.imshow(g, cmap="plasma", origin="lower", vmin=0, vmax=1)
         fig.colorbar(im)
         plt.show()
