@@ -3,10 +3,10 @@ Routines to calculate 2-point correlation functions
 :math:`G(\\mathbf{r}), \ S(\\mathbf{q})` for point and
 rod-like particle pairs.
 Can reduce to the usual isotropic :math:`G(r)` with the
-corresponding fourier representation :math:`S(q)`.
-
-See `here <https://en.wikipedia.org/wiki/Radial_distribution_function>`_
-to learn more.
+corresponding fourier representation :math:`S(q)` and even
+compute multipoles :math:`G_{\\ell}(r)` and :math:`S_{\\ell}(q)`
+in angular dependencies :math:`G(r, \\hat{\\mathbf{r}}\\cdot\\hat{\\mathbf{z}})`
+and :math:`S(q, \\hat{\\mathbf{q}}\\cdot\\hat{\\mathbf{z}})`.
 
 Adapted from https://github.com/wenyan4work/point_cloud.
 
@@ -18,93 +18,145 @@ import numpy as np
 import scipy.spatial as spatial
 import numba as nb
 from scipy.integrate import simps
-from scipy.special import jv
+from scipy.special import jv, spherical_jn, eval_legendre
 from time import time
 
 
-def fourier_corr(gr, r, N, boxsize, q=None, **kwargs):
-    """
-    Calculate the isotropic fourier correlation function :math:`S(q)` from
-    the pair correlation function :math:`G(r)` of a set of :math:`N`
-    particle positions in a 2D or 3D periodic box with volume :math:`V`.
+def fourier_multipoles(g_ell, ell, r, N, boxsize, dq=None, nq=None):
+    r"""
+    .. _fourier_multipoles:
 
-    The fourier-space pairwise correlation function in 3D and 2D are fourier
-    transforms of :math:`G(r)`. Explicitly performing the angular integrals,
-    in 3D this is
+    Compute fourier space multipoles :math:`S_{\ell}(q)`
+    from real space multipoles :math:`G_{\ell}(r)` using the
+    transform
 
     .. math::
 
-        S(q) = 4\\pi \\rho \int dr \ r^2 \ j_0(qr) G(r)
+        S_{\ell}(q) = 4\pi\rho (-i)^{\ell} \int dr \ r^2 j_{\ell}(qr) G_{\ell}(r).
 
-    and in 2D
+    in 3D and
 
     .. math::
 
-        S(q) = 2\\pi \\rho \int dr \ r \ J_{0}(qr) G(r),
+        S(\ell)(q) = 2\pi\rho (-i)^{\ell} \int dr \ r J_{\ell}(qr) G_{\ell}(r)
 
-    where :math:`\\rho = N/V` and :math:`J_{0}, \ j_{0}` are the
-    zeroth order bessel and spherical bessel functions, respectively.
+    in 2D. :math:`\rho = N / V` is the density. Note that
+    :math:`G_{\ell}` must decay to zero for this to be
+    well-defined.
 
-    If finding the structure factor for the radial distribution function
-    :math:`g(r)`, conventionally :math:`S` is computed by setting
-    :math:`G(r) = g(r) - 1` because :math:`g` decays to 1. In this case
-    and in general for correlations that decay to some non-zero value,
-    subtract the asymptotic value from :math:`g` (i.e. the input to ``gr``)
-    when computing :math:`S`.
+    Normalization is chosen so that the isotropic
+    structure factor :math:`s(q)` defined by
+
+    .. math::
+
+        s(q) = 4\pi\rho \int dr \ r^2 j_0(qr) [g(r) - 1]
+
+    decays to :math:`1`, where :math:`g(r)` is the radial distribution
+    function.
 
     Parameters
     ----------
-    gr : `np.ndarray`
-        The pairwise correlation function :math:`G(r)` from
-        :ref:`spatialstats.particles.corr<corr>`.
-    r : `np.ndarray`
-        The domain of :math:`G(r)` from
-        :ref:`spatialstats.particles.corr<corr>`.
+    g_ell : `np.ndarray`, shape `(nr,)`
+        Real space multipoles :math:`G_{\ell}(r)`
+        returned by :ref:`spatialstats.particles.multipoles<multipoles>`.
+        Can be a ``list`` if ``ell`` is too.
+    ell : `int`
+        Multipole indices of ``g_ell``.
+    r : `np.ndarray`, shape `(nr,)`
+        Radial bins :math:`r` to integrate over.
     N : `int`
         The number of particles :math:`N`.
     boxsize : `list` of `float`
         The rectangular domain over which
         to apply periodic boundary conditions.
-        See ``scipy.spatial.cKDTree``.
-    q : `np.ndarray`, optional
-        Dimensional wavenumber bins :math:`q`.
-        If ``None``, ``q = np.arange(dq, 200*dq, dq)``
-        with ``dq = 2*np.pi / max(boxsize)``.
+        Simply used to calculate :math:`\rho = N/V`.
+    dq : `float`
+        Spacing of :math:`q` bins. Default is the
+        fundamental mode given by ``dq = np.pi / r.max()``.
+    nq : `int`
+        Number of :math:`q` bins. Default is ``r.size``.
 
     Returns
     -------
-    Sq : `np.ndarray`
-        The fourier 2-point correlation function :math:`S(q)`.
-    q : `np.ndarray`
+    s_ell : `np.ndarray`, shape `(nr,)`
+        Multipoles :math:`S_{\ell}(q)`. Returns a
+        list if ``ell`` is a ``list``.
+    q : `np.ndarray`, shape `(nr,)`
         Wavenumber bins :math:`q`.
     """
+    g_ells = [g_ell] if type(g_ell) is not list else g_ells
+    ells = [ell] if type(ell) is not list else ell
+    dq = np.pi / r.max() if dq is None else dq
+    nq = r.size if nq is None else nq
+    q = np.arange(0, dq*nq, dq)
+
     ndim = len(boxsize)
+    rho = N / np.prod(boxsize)
 
     if ndim not in [2, 3]:
-        raise ValueError("Dimension of space must be 2 or 3")
+        raise ValueError("Dimension of box must be 2 or 3.")
 
-    # Generate wavenumbers
-    if q is None:
-        dq = (2*np.pi / max(boxsize))
-        q = np.arange(dq, 200*dq, dq)
-
-    def S(q):
-        '''Integrand for isotropic correlation function'''
-        rho = N/np.prod(boxsize)
+    def S(q, g_ell, ell):
         if ndim == 3:
-            f = np.sin(q*r)*r*gr
-            return 4*np.pi*rho*simps(f, r)/q
+            j_ell = spherical_jn(ell, q*r)
+            return 4*np.pi*rho*(-1.j)**ell*simps(r**2*j_ell*g_ell, r)
         else:
-            f = jv(0, q*r)*r*gr
-            return 2*np.pi*rho*simps(f, r)
+            J_ell = jv(ell, q*r)
+            return 2*np.pi*rho*(-1.j)**ell*simps(r*J_ell*g_ell, r)
 
-    # Integrate for all q
-    Sq = []
-    for j in range(len(q)):
-        Sq.append(S(q[j]))
-    Sq = np.array(Sq)
+    s_ells = []
+    for idx in range(ells):
+        g_l, l = g_ells[idx], ells[idx]
+        sq = np.zeros_like(q)
+        for jdx in range(nq):
+            sq[jdx] = S(q[jdx], g_l, l)
+        s_ells.append(sq)
 
-    return Sq, q
+    return s_ells if type(ell) is list else s_ells[0]
+
+
+def multipoles(g, costheta, ell=0):
+    r"""
+    .. _multipoles:
+
+    Compute multipoles of a correlation function of the form
+    :math:`G(r, \cos\theta)` defined by
+
+    .. math::
+
+        G_{\ell}(r) = \frac{2\ell+1}{2} \int_{-1}^1 d\cos\theta \ G(r, \cos\theta)\mathcal{L}_{\ell}(\cos\theta).
+
+    Parameters
+    ----------
+    g : `np.ndarray`, shape `(nr, ntheta)`
+        2D correlation function :math:`G(r, \cos\theta)`
+        returned by :ref:`spatialstats.particles.corr<corr>`.
+    costheta : `np.ndarray`, shape `(ntheta,)`
+        Array of :math:`\cos\theta` bins used as
+        integration domain in ``scipy.integrate.simps``.
+    ell : `int` or `list`
+        Degree of multipole to compute. For example,
+        ``ell = [0, 1, 2]`` computes the monopole,
+        dipole, and quadrapole.
+
+    Returns
+    -------
+    g_ells : `np.ndarray`, shape `(nr,)`
+        Multipoles :math:`G_{\ell}(r)`. If ``type(ell) = list``,
+        then ``g_ells`` is a ``list``.
+    """
+    nr, ntheta = g.shape
+    ells = [ell] if type(ell) is int else ell
+
+    def G(ell):
+        L = eval_legendre(ell, costheta)
+        return 0.5*(2*ell+1)*simps(g*L, costheta, axis=1)
+
+    g_ells = []
+    for l in ells:
+        g_ells.append(G(l))
+
+    return g_ells if type(ell) is list else g_ells[0]
 
 
 def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rmax=None,
@@ -127,7 +179,7 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
     i.e. the spatial distribution function in the displacement
     coordinate frame. This is computed as
     :math:`g(\\mathbf{r}) = \\langle \\delta(\\mathbf{r}_j - \\mathbf{r}_i) \\rangle`,
-    where :math:`\\langle ... \\rangle` is an average over particle pair displacements
+    where :math:`\\langle\\cdot\\rangle` is an average over particle pair displacements
     :math:`\\mathbf{r}_j - \\mathbf{r}_i` in a periodic box summed over
     each choice of origin :math:`\\mathbf{r}_i`.
 
@@ -177,7 +229,7 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
     nphi : `int`, optional
         Number of points to bin in :math:`\\phi`.
     ntheta : `int`, optional
-        Number of points to bin in :math:`\\theta`.
+        Number of points to bin in :math:`\\cos\\theta` or :math:`\\theta`.
     cos : `bool`, optional
         Choose whether to bin in slices of :math:`\\cos\\theta`
         or :math:`\\theta`. Default is :math:`\\cos\\theta`.
@@ -192,17 +244,20 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
     Returns
     -------
     g : `np.ndarray`, shape `(nr, nphi, ntheta)`
-        Radial distribution function :math:`G(r, \\phi, \\theta)`.
+        Radial distribution function :math:`G(r, \\phi, \\cos\\theta)`.
         If the user does not bin for a certain coordinate,
-        ``G`` will not be 3 dimensional (e.g. if ``nphi = None``,
-        ``G`` will be shape ``(nr, ntheta)``).
+        :math:`G` will not be 3 dimensional (e.g. if ``nphi = None``,
+        :math:`G` will be shape ``(nr, ntheta)``).
     r : `np.ndarray`, shape `(nr,)`
         Left edges of radial bins :math:`r`.
     phi : `np.ndarray`, shape `(nphi,)`
         Left edges of angular bins :math:`\\phi \\in [-\\pi, \\pi)`.
     theta : `np.ndarray`, shape `(ntheta,)`
-        Left edges of angular bins :math:`\\theta \\in [0, \\pi)`.
+        Left edges of angular bins :math:`\\theta \\in [0, \\pi)`
+        or :math:`\\cos\\theta \\in [-1, 1)`.
         Not returned for 2D datasets.
+    vol : `np.ndarray`, shape ``g.shape``
+        Bin volume used to normalize :math:`G`.
     """
     N, ndim = positions.shape
     boxsize = np.array(boxsize)
@@ -262,7 +317,7 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
     r_n = np.linspace(rmin, rmax, nr+1)
     phi_m = 2*np.pi*np.linspace(0, 1, nphi+1) - np.pi
     theta_l = np.linspace(-1, 1, ntheta+1) if cos else np.pi*np.linspace(0, 1, ntheta+1)
-    g = _get_distribution(rij, wiwj, N, boxsize, r_n, phi_m, theta_l, cos, **kwargs)
+    g, vol = _get_distribution(rij, wiwj, N, boxsize, r_n, phi_m, theta_l, cos, **kwargs)
 
     if bench:
         t2 = time()
@@ -273,6 +328,7 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
     out = [g, r_n[:-1], phi_m[:-1]]
     if ndim == 3:
         out.append(theta_l[:-1])
+    out.append(vol)
 
     return tuple(out)
 
@@ -292,7 +348,7 @@ def _get_distribution(rij, wiwj, N, boxsize, r_n, phi_m, theta_l, cos, **kwargs)
     density = N/(np.prod(boxsize))
     vol = np.squeeze(_get_volume(count, r_n, phi_m, theta_l, ndim, cos))
     g = count/(N*vol*density)
-    return g
+    return g, vol
 
 
 @nb.njit(parallel=True, cache=True)
