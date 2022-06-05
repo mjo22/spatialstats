@@ -38,7 +38,7 @@ def fourier_multipoles(g_ell, ell, r, N, boxsize, dq=None, nq=None):
 
     .. math::
 
-        S(\ell)(q) = 2\pi\rho (-i)^{\ell} \int dr \ r J_{\ell}(qr) G_{\ell}(r)
+        S_{\ell}(q) = 2\pi\rho (-i)^{\ell} \int dr \ r J_{\ell}(qr) G_{\ell}(r)
 
     in 2D. :math:`\rho = N / V` is the density. Note that
     :math:`G_{\ell}` must decay to zero for this to be
@@ -51,8 +51,8 @@ def fourier_multipoles(g_ell, ell, r, N, boxsize, dq=None, nq=None):
 
         s(q) = 4\pi\rho \int dr \ r^2 j_0(qr) [g(r) - 1]
 
-    decays to :math:`1`, where :math:`g(r)` is the radial distribution
-    function.
+    is bounded between :math:`0` and :math:`1`, where
+    :math:`g(r)` is the radial distribution function.
 
     Parameters
     ----------
@@ -78,13 +78,13 @@ def fourier_multipoles(g_ell, ell, r, N, boxsize, dq=None, nq=None):
 
     Returns
     -------
-    s_ell : `np.ndarray`, shape `(nr,)`
+    s_ells : `np.ndarray`, shape `(nq,)`
         Multipoles :math:`S_{\ell}(q)`. Returns a
         list if ``ell`` is a ``list``.
-    q : `np.ndarray`, shape `(nr,)`
+    q : `np.ndarray`, shape `(nq,)`
         Wavenumber bins :math:`q`.
     """
-    g_ells = [g_ell] if type(g_ell) is not list else g_ells
+    g_ells = [g_ell] if type(g_ell) is not list else g_ell
     ells = [ell] if type(ell) is not list else ell
     dq = np.pi / r.max() if dq is None else dq
     nq = r.size if nq is None else nq
@@ -105,14 +105,16 @@ def fourier_multipoles(g_ell, ell, r, N, boxsize, dq=None, nq=None):
             return 2*np.pi*rho*(-1.j)**ell*simps(r*J_ell*g_ell, r)
 
     s_ells = []
-    for idx in range(ells):
+    for idx in range(len(ells)):
         g_l, l = g_ells[idx], ells[idx]
-        sq = np.zeros_like(q)
+        sq = np.zeros_like(q, dtype=np.complex128)
         for jdx in range(nq):
             sq[jdx] = S(q[jdx], g_l, l)
         s_ells.append(sq)
 
-    return s_ells if type(ell) is list else s_ells[0]
+    result = s_ells if type(ell) is list else s_ells[0]
+
+    return result, q
 
 
 def multipoles(g, costheta, ell=0):
@@ -144,6 +146,7 @@ def multipoles(g, costheta, ell=0):
     g_ells : `np.ndarray`, shape `(nr,)`
         Multipoles :math:`G_{\ell}(r)`. If ``type(ell) = list``,
         then ``g_ells`` is a ``list``.
+
     """
     nr, ntheta = g.shape
     ells = [ell] if type(ell) is int else ell
@@ -156,7 +159,9 @@ def multipoles(g, costheta, ell=0):
     for l in ells:
         g_ells.append(G(l))
 
-    return g_ells if type(ell) is list else g_ells[0]
+    result = g_ells if type(ell) is list else g_ells[0]
+
+    return result
 
 
 def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rmax=None,
@@ -176,12 +181,12 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
     the inclination angle.
 
     If ``weight = None``, :math:`G(\\mathbf{r}) = g(\\mathbf{r})`,
-    i.e. the spatial distribution function in the displacement
-    coordinate frame. This is computed as
+    i.e. the spatial distribution function. This is computed as
     :math:`g(\\mathbf{r}) = \\langle \\delta(\\mathbf{r}_j - \\mathbf{r}_i) \\rangle`,
     where :math:`\\langle\\cdot\\rangle` is an average over particle pair displacements
     :math:`\\mathbf{r}_j - \\mathbf{r}_i` in a periodic box summed over
-    each choice of origin :math:`\\mathbf{r}_i`.
+    each choice of origin :math:`\\mathbf{r}_i`. The normalization of
+    :math:`G` is chosen so that :math:`g(r)` decays to 1.
 
     Generally, if the ``weights`` argument is a vector defined for all
     particles :math:`\\mathbf{w}_i`, the pair correlation
@@ -199,7 +204,7 @@ def corr(positions, boxsize, weights=None, z=1, orientations=None, rmin=None, rm
         when ``nphi = None``, ``ntheta = None``, and ``weights = None``.
 
     Parameters
-    ---------
+    ----------
     positions : `np.ndarray`, shape `(N, ndim)`
         Particle positions :math:`\\mathbf{r}_i`
         in 2D or 3D for :math:`N` particles.
@@ -532,33 +537,35 @@ if __name__ == "__main__":
 
     from matplotlib import pyplot as plt
 
-    N = 200
-    boxsize = [10, 10, 10]
+    N = 1000
+    boxsize = [50, 50, 50]
     np.random.seed(1234)
-    pos = np.random.rand(N, 3)*10
+    pos = np.random.rand(N, 3)*50
     orient = np.zeros((N, 3))
-    orient[:, 0] = 1
+    #orient[:, 0] = 1
+    orient = None
+    weights = None
     #orient = np.random.rand(N, 3)
-    weights = np.random.rand(N, 3)*2 - 1
-    rmax = 10
+    #weights = np.random.rand(N, 3)*2 - 1
+    rmax = 25
     cos = True
     #orient = None
 
-    g, r, phi, theta = corr(pos, boxsize, rmax=rmax,
-                            orientations=orient, z=2,
-                            weights=orient, bench=True,
-                            nr=100, ntheta=80, cos=cos)
+    g, r, phi, theta, vol = corr(pos, boxsize, rmax=rmax,
+                                 orientations=orient, z=1,
+                                 weights=weights, bench=True,
+                                 nr=100, ntheta=1, cos=cos)
 
     print(g.mean(), g.shape)
 
     if g.ndim == 1:
-        f = g-g.mean()
-        S, q = fourier_corr(f, r, N, boxsize)
+        f = g-1
+        S, q = fourier_multipoles(f, 0, r, N, boxsize)
         fig, axes = plt.subplots(ncols=2)
         axes[0].plot(r, g)
         axes[0].set_xlabel("$r$")
         axes[0].set_ylabel("$g(r)$")
-        axes[1].plot(q, S)
+        axes[1].plot(q, np.abs(S))
         axes[1].set_xlabel("$q$")
         axes[1].set_ylabel("$S(q)$")
         plt.show()

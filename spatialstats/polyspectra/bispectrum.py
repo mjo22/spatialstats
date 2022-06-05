@@ -18,8 +18,8 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
                compute_fft=True, exclude_upper=False, use_pyfftw=False,
                bench=False, progress=False, **kwargs):
     """
-    Estimate the bispectrum :math:`B(k_1, k_2, \\theta)`
-    and bicoherence index :math:`b(k_1, k_2, \\theta)` of a real
+    Estimate the bispectrum :math:`B(k_1, k_2, \\cos\\theta)`
+    and bicoherence index :math:`b(k_1, k_2, \\cos\\theta)` of a real
     scalar field :math:`u` or vector field :math:`\mathbf{u}`.
 
     Assuming statistical homogeneity, we define the bispectrum
@@ -43,13 +43,12 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
             \\tilde{u}_k^{*}(\mathbf{k}_1+\mathbf{k}_2)\\rangle,
 
     where we have a bispectrum for each combination of vector
-    components. In 2D :math:`B_{ijk}` has 6 unique components
-    and in 3D it has 18.
+    components.
     Proceeding for the case of a scalar field, we compute our bispectrum
     as
 
     .. math::
-        B(k_1, k_2, \\theta) = \\frac{1}{V_1 V_2} \int\int_{\Omega}
+        B(k_1, k_2, \\cos\\theta) = \\frac{1}{V_1 V_2} \int\int_{\Omega}
             d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
                 \\tilde{u}(\mathbf{k}_1)\\tilde{u}(\mathbf{k}_2)
                     \\tilde{u}^{*}(\mathbf{k}_1 + \mathbf{k}_2),
@@ -57,7 +56,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     and the bicoherence as
 
     .. math::
-        b(k_1, k_2, \\theta) = \\frac{
+        b(k_1, k_2, \\cos\\theta) = \\frac{
             |\int\int_{\Omega} d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
                 \\tilde{u}(\mathbf{k}_1)\\tilde{u}(\mathbf{k}_2)
                     \\tilde{u}^{*}(\mathbf{k}_1 + \mathbf{k}_2)|}{
@@ -69,7 +68,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`) pairs such that
     :math:`|\mathbf{k}_1| \in [k_1, k_1+1)`,
     :math:`|\mathbf{k}_2| \in [k_2, k_2+1)`, and
-    :math:`\\arccos{(\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2)} \in [\\theta, \\theta+\\Delta \\theta)`.
+    :math:`\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2 \in [\\cos\\theta, \\cos\\theta+\\Delta \\cos\\theta)`.
     We only consider :math:`(\mathbf{k}_2)_z > 0` to include
     (:math:`\mathbf{k}_1`, :math:`\mathbf{k}_2`) contributions
     but not their complex conjugates from
@@ -77,15 +76,12 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     over :math:`\Omega` is real so this improves performance.
 
     If the data is also statistically isotropic, then we can say that
-    the bispectrum is only a function of scalar wavenumber,
-    :math:`B = B(k_1, k_2, k_3)`. Use this implementation's
-    variance estimates on the average over :math:`\\Omega`
-    to test this assumption.
+    :math:`B = B(k_1, k_2, \hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2)`.
 
     To calculate :math:`B`, we take the average
 
     .. math::
-        B(k_1, k_2, \\theta) = \\frac{1}{|\Omega|}
+        B(k_1, k_2, \\cos\\theta) = \\frac{1}{|\Omega|}
             \sum\limits_{\Omega} \\tilde{u}(\mathbf{k}_1)\\tilde{u}(\mathbf{k}_2)
                                  \\tilde{u}^{*}(\mathbf{k}_1 + \mathbf{k}_2),
 
@@ -96,20 +92,13 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     This defines an unbiased estimator of :math:`B`,
 
      .. math::
-        \\hat{B}(k_1, k_2, \\theta) = \\frac{1}{N}
+        \\hat{B}(k_1, k_2, \\cos\\theta) = \\frac{1}{N}
             \sum\limits_{n = 1}^{N} \\tilde{u}(\mathbf{k}_1^n)\\tilde{u}(\mathbf{k}_2^n)
                                  \\tilde{u}^{*}(\mathbf{k}_1^n + \mathbf{k}_2^n).
 
     The same procedure is used to compute :math:`b`. By default, this
-    implementation returns :math:`B(k_1, k_2)`, the mean
-    bispectrum summed over triangle angle :math:`\\theta`.
-
-    To learn more, read `here <https://arxiv.org/pdf/astro-ph/0112551.pdf>`_.
-
-    .. note::
-        One can recover the sum over triangles by multiplying ``counts * B``
-        when ``nsamples = None``. Or, if ``ntheta = None``,
-        evaulate ``omega * B``.
+    implementation returns :math:`B(k_1, k_2)`, the
+    bispectrum summed over :math:`\\cos\\theta`.
 
     .. note::
         When considering the bispectrum as a function of triangle
@@ -121,12 +110,6 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
         Computing a boolean mask with ``np.isnan`` and reductions
         like ``np.nansum`` can be useful.
 
-    .. note::
-        Computing ``np.nansum(B*counts, axis=0)/np.sum(counts, axis=0)``
-        recovers the bispectrum summed over triangle angles.
-        To recover the corresponding bicoherence, evaulate
-        ``np.abs(np.nansum(B, axis=0)) / np.nansum(np.abs(B)/b, axis=0)``.
-
     Parameters
     ----------
     u : `np.ndarray`
@@ -136,7 +119,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
         Each ``ui`` can be 2D or 3D, and all must have the
         same ``ui.shape`` and ``ui.dtype``.
     ntheta : `int`, optional
-        Number of angular bins :math:`\\theta` between triangles
+        Number of angular bins :math:`\\cos\\theta` between triangles
         formed by wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
         If ``None``, sum over all triangle angles. Otherwise,
         return a bispectrum for each angular bin.
@@ -187,15 +170,15 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     Returns
     -------
     B : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
-        Bispectrum :math:`B(k_1, k_2, \\theta)`.
+        Bispectrum :math:`B(k_1, k_2, \\cos\\theta)`.
     b : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
-        Bicoherence index :math:`b(k_1, k_2, \\theta)`.
+        Bicoherence index :math:`b(k_1, k_2, \\cos\\theta)`.
     kn : `np.ndarray`, shape `(kmax-kmin+1,)`
         Left edges of wavenumber bins :math:`k_1` or :math:`k_2`
         along axis of bispectrum.
     theta : `np.ndarray`, shape `(m,)`, optional
-        Left edges of angular bins :math:`\\theta`, ranging from
-        :math:`[0, \ \\pi)`.
+        Left edges of angular bins :math:`\\cos\\theta`, ranging from
+        :math:`[-1, \ 1)`.
     counts : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
         Number of evaluations in the bispectrum sum, :math:`N`.
     omega : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
@@ -221,9 +204,8 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     kmin = 1 if kmin is None else int(kmin)
     kn = np.arange(kmin, kmax+1, 1, dtype=int)
     dim = kn.size
-    theta = np.arange(0, np.pi, np.pi/ntheta) if ntheta is not None else None
-    # ...make costheta monotonically increase
-    costheta = np.flip(np.cos(theta)) if theta is not None else np.array([1.])
+    dtheta = 2/ntheta
+    costheta = np.arange(-1, 1, dtheta)+dtheta if theta is not None else np.array([1.])
 
     # theta = 0 should be included
     if theta is not None:
@@ -306,24 +288,19 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     norm[mask] = np.nan
     counts[mask] = np.nan
 
+    # Throw away imaginary part
+    B = B.real
+
     # Get bicoherence and average bispectrum
     b = np.abs(B) / norm
-    B.real /= counts
-    B.imag /= counts
+    B /= counts
 
     # Prepare diagnostics
     if error:
         stderr[counts <= 1.] = np.nan
 
-    # Switch back to theta monotonically increasing
-    if ntheta is not None:
-        B[...] = np.flip(B, axis=0)
-        b[...] = np.flip(b, axis=0)
-        if diagnostics:
-            counts[...] = np.flip(counts, axis=0)
-            if error:
-                stderr[...] = np.flip(stderr, axis=0)
-    else:
+    # If no theta bins, get rid of m dimension
+    if ntheta is None:
         B, b = B[0], b[0]
         if diagnostics:
             counts = counts[0]
@@ -335,7 +312,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
 
     result = [B, b, kn]
     if ntheta is not None:
-        result.append(theta)
+        result.append(costheta-dtheta)
     if diagnostics:
         result.extend([counts, omega])
         if error:

@@ -5,4 +5,4 @@ particle distributions.
 .. moduleauthor:: Michael O'Brien <michaelobrien@g.harvard.edu>
 """
 
-from .particle_correlations import corr, fourier_corr
+from .particle_correlations import corr, multipoles, fourier_multipoles

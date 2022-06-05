@@ -29,7 +29,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
         Each ``ui`` can be 2D or 3D, and all must have the
         same ``ui.shape`` and ``ui.dtype``.
     ntheta : `int`, optional
-        Number of angular bins :math:`\\theta` between triangles
+        Number of angular bins :math:`\\cos\\theta` between triangles
         formed by wavevectors :math:`\mathbf{k_1}, \ \mathbf{k_2}`.
         If ``None``, sum over all triangle angles. Otherwise,
         return a bispectrum for each angular bin.
@@ -81,14 +81,14 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     Returns
     -------
     B : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
-        Bispectrum :math:`B(k_1, k_2, \\theta)`.
+        Bispectrum :math:`B(k_1, k_2, \\cos\\theta)`.
     b : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`
-        Bicoherence index :math:`b(k_1, k_2, \\theta)`.
+        Bicoherence index :math:`b(k_1, k_2, \\cos\\theta)`.
     kn : `np.ndarray`, shape `(kmax-kmin+1,)`
         Wavenumbers :math:`k_1` or :math:`k_2` along axis of bispectrum.
     theta : `np.ndarray`, shape `(m,)`, optional
-        Left edges of angular bins :math:`\\theta`, ranging from
-        :math:`[0, \ \\pi)`.
+        Left edges of angular bins :math:`\\cos\\theta`, ranging from
+        :math:`[-1, \ 1)`.
     counts : `np.ndarray`, shape `(m, kmax-kmin+1, kmax-kmin+1)`, optional
         Number of evaluations in the bispectrum sum, :math:`N`.
     omega : `np.ndarray`, shape `(kmax-kmin+1, kmax-kmin+1)`, optional
@@ -122,9 +122,8 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     kmin = 1 if kmin is None else int(kmin)
     kn = np.arange(kmin, kmax+1, 1, dtype=int)
     dim = kn.size
-    theta = cp.arange(0, np.pi, np.pi/ntheta) if ntheta is not None else None
-    # ...make costheta monotonically increase
-    costheta = cp.flip(np.cos(theta)) if theta is not None else cp.array([1.])
+    dtheta = 2/ntheta
+    costheta = cp.arange(-1, 1, dtheta)+dtheta if theta is not None else cp.array([1.])
 
     # theta = 0 should be included
     if theta is not None:
@@ -232,24 +231,19 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     norm[mask] = cp.nan
     counts[mask] = cp.nan
 
+    # Throw away imaginary part
+    B = B.real
+
     # Get bicoherence and average bispectrum
     b = np.abs(B) / norm
-    B.real /= counts
-    B.imag /= counts
+    B /= counts
 
     # Prepare diagnostics
     if error:
         stderr[counts <= 1.] = cp.nan
 
-    # Switch back to theta monotonically increasing
-    if ntheta is not None:
-        B[...] = cp.flip(B, axis=0)
-        b[...] = cp.flip(b, axis=0)
-        if diagnostics:
-            counts[...] = cp.flip(counts, axis=0)
-            if error:
-                stderr[...] = cp.flip(stderr, axis=0)
-    else:
+    # If no theta bins, get rid of m dimension
+    if ntheta is None:
         B, b = B[0], b[0]
         if diagnostics:
             counts = counts[0]
@@ -261,7 +255,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
 
     result = [B.get(), b.get(), kn]
     if theta is not None:
-        result.append(theta.get())
+        result.append(costheta.get()-dtheta)
     if diagnostics:
         result.extend([counts.get(), omega])
         if error:
