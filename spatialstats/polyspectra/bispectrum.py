@@ -44,9 +44,13 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
 
     where we have a bispectrum for each combination of vector
     components.
-    Proceeding for the case of a scalar field, we compute our bispectrum
-    as
+    Proceeding for the case of a scalar field, if the data is also
+    statistically isotropic, then we can say that
+    :math:`B = B(k_1, k_2, \hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2)`.
 
+    With :math:`\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2 \\equiv \\cos\\theta`,
+    we compute the bispectrum as
+,
     .. math::
         B(k_1, k_2, \\cos\\theta) = \\frac{1}{V_1 V_2} \int\int_{\Omega}
             d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
@@ -75,10 +79,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     (:math:`-\mathbf{k}_1`, :math:`-\mathbf{k}_2`). The bispectrum defined
     over :math:`\Omega` is real so this improves performance.
 
-    If the data is also statistically isotropic, then we can say that
-    :math:`B = B(k_1, k_2, \hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2)`.
-
-    To calculate :math:`B`, we take the average
+    To estimate :math:`B`, we take the average
 
     .. math::
         B(k_1, k_2, \\cos\\theta) = \\frac{1}{|\Omega|}
