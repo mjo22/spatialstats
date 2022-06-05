@@ -50,7 +50,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
 
     With :math:`\hat{\mathbf{k}}_1 \cdot \hat{\mathbf{k}}_2 \\equiv \\cos\\theta`,
     we compute the bispectrum as
-,
+
     .. math::
         B(k_1, k_2, \\cos\\theta) = \\frac{1}{V_1 V_2} \int\int_{\Omega}
             d^D \mathbf{k}_1 d^D \mathbf{k}_2 \ 
