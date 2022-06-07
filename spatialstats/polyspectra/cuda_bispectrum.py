@@ -20,6 +20,10 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     """
     See the documentation for the :ref:`CPU version<bispectrum>`.
 
+    This implementation is written to minimize memory
+    requirements on a single GPU. Set ``double = False``
+    to save memory.
+
     Parameters
     ----------
     u : `np.ndarray` or `cp.ndarray`
@@ -123,10 +127,10 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     kn = np.arange(kmin, kmax+1, 1, dtype=int)
     dim = kn.size
     dtheta = 2/ntheta
-    costheta = cp.arange(-1, 1, dtheta)+dtheta if theta is not None else cp.array([1.])
+    costheta = cp.arange(-1, 1, dtheta)+dtheta if ntheta is not None else cp.array([1.])
 
     # theta = 0 should be included
-    if theta is not None:
+    if ntheta is not None:
         costheta[-1] += 1e-5
 
     if bench:
@@ -138,6 +142,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     kr = cp.zeros_like(kv[0])
     tpb = blocksize
     bpg = (kr.size + (tpb - 1)) // tpb
+    # Need to write custom kernels to save memory
     for i in range(ndim):
         _sqr_add((bpg,), (tpb,), (kr, kv[i], kr.size))
     _sqrt((bpg,), (tpb,), (kr, kr.size))
@@ -254,7 +259,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
         print(f"Time: {time() - t0:.04f} s")
 
     result = [B.get(), b.get(), kn]
-    if theta is not None:
+    if ntheta is not None:
         result.append(costheta.get()-dtheta)
     if diagnostics:
         result.extend([counts.get(), omega])
@@ -1208,14 +1213,13 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    N = 20
+    N = 30
     np.random.seed(1234)
-    datax = np.random.rand(N, N)+1
-    datay = np.random.rand(N, N)+1
+    data = np.random.rand(N, N)+1
 
-    kmin, kmax = 1, 10
-    result = bispectrum(datax, datay, datax, kmin=kmin, kmax=kmax,
-                        ntheta=9, double=False, progress=True, bench=True)
+    kmin, kmax = 1, 15
+    result = bispectrum(data, kmin=kmin, kmax=kmax,
+                        ntheta=9, double=True, progress=True, bench=True)
     bispec, bicoh, kn, theta, counts, omega = result
 
     print(np.nansum(bispec), np.nansum(bicoh))

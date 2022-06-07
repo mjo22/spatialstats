@@ -142,6 +142,9 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
         possible triangles. This may be an array that
         specifies for a given :math:`k_1, \ k_2`.
         If ``None``, calculate the exact sum.
+        Note that the computation is parallelized over
+        this value, so for sufficiently large nsamples
+        there can be memory errors.
     sample_thresh : `int`, optional
         When the size of the sample space is greater than
         this number, start to use sampling instead of exact
@@ -205,10 +208,10 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
     kn = np.arange(kmin, kmax+1, 1, dtype=int)
     dim = kn.size
     dtheta = 2/ntheta
-    costheta = np.arange(-1, 1, dtheta)+dtheta if theta is not None else np.array([1.])
+    costheta = np.arange(-1, 1, dtheta)+dtheta if ntheta is not None else np.array([1.])
 
     # theta = 0 should be included
-    if theta is not None:
+    if ntheta is not None:
         costheta[-1] += 1e-5
 
     if bench:
@@ -560,12 +563,12 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-    N = 200
+    N = 30
     np.random.seed(1234)
     data = np.random.rand(N, N)+1
 
-    kmin, kmax = 1, 100
-    result = bispectrum(data, nsamples=10000, kmin=kmin, kmax=kmax,
+    kmin, kmax = 1, 15
+    result = bispectrum(data, nsamples=None, kmin=kmin, kmax=kmax,
                         ntheta=9, progress=True, bench=True)
     bispec, bicoh, kn, theta, counts, omega = result
 
