@@ -144,7 +144,7 @@ def bispectrum(*u, ntheta=None, kmin=None, kmax=None,
         specifies for a given :math:`k_1, \ k_2`.
         If ``None``, calculate the exact sum.
         Note that the computation is parallelized over
-        this value, so for sufficiently large nsamples
+        this value, so for sufficiently large ``nsamples``
         there can be memory errors.
     sample_thresh : `int`, optional
         When the size of the sample space is greater than
