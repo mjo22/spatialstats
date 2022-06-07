@@ -5,7 +5,7 @@ Routines are designed to work with large datasets and some include optional CuPy
 
 You can read the docs at https://spatialstats.readthedocs.io/.
 
-If you have a routine that you think would fit in this package, please do reach out! I currently have no plans to implement specific routines--only ones that come up in my research. I hope that this project will grow through a community of cross-disciplinary contributors.
+If you have a routine that you think would fit in this package, please do reach out! I currently have no plans to implement specific routines--only ones that come up in my research.
 
 ### polyspectra ###
 Calculate the bispectrum and power spectrum of 2D and 3D grids.
@@ -37,6 +37,8 @@ Clone from github and build by running
 ```shell
 python setup.py install
 ```
+
+This is the recommended method of installation.
 
 ### Option 2 ###
 
