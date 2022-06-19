@@ -25,7 +25,7 @@ def nufftpower(positions, orientations, weights,
     .. math::
         \mathbf{w}(\mathbf{x}) = \sum_i \mathbf{w}_i \delta(\mathbf{x} - \mathbf{x}_i),
 
-    while the polarity field is
+    with a corresponding polarity field
 
     .. math::
         \mathbf{p}(\mathbf{x}) = \sum_i \mathbf{p}_i \delta(\mathbf{x} - \mathbf{x}_i).
@@ -119,16 +119,15 @@ def nufftpower(positions, orientations, weights,
             ffts1, scalar, *xi.T)
 
     # Compute multipoles
-    spectra, k, Nk, vk = _compute_multipoles(*args, **kwargs)
+    spectra, k, Nk, Vk = _compute_multipoles(*args, **kwargs)
 
-    return spectra, k, Nk, vk
+    return spectra, k, Nk, Vk
 
 
 def fftpower(field, polarity, poles=0, **kwargs):
     r"""
-    .. _fftpower:
-
-    See the documentation for the :ref:`non-uniform version<nufftpower>`.
+    See the documentation for
+    :ref:`spatialstats.polyspectra.nufftpower <nufftpower>`.
 
     This computes power spectrum multipoles for a scalar, vector,
     or tensor field :math:`\mathbf{w}(\mathbf{x})` with respect to a polarity field
@@ -151,9 +150,9 @@ def fftpower(field, polarity, poles=0, **kwargs):
     spectra : list of `np.ndarray`, shape `(nk,)`
         Multipoles :math:`\mathcal{P}_{\ell}(k)`.
     k : `np.ndarray`, shape `(nk,)`
-        Wavenumbers :math:`k`, where ``nk = int(max(modes)/2)+1``.
-        Spacing between wavenumbers is taken to be the fundamental
-        mode of the box set by ``modes``.
+        Wavenumbers :math:`k`, where ``kmax = int(max(modes)/2)``
+        and ``nk = kmax+1``. The zero mode is returned, so
+        ``k = np.linspace(0, kmax, nk, endpoint=True)``.
     Nk : `np.ndarray`, shape `(nk,)`
         Number of points in a wavenumber bin :math:`N_k` with shell thickness
         :math:`[k, k+1)`.
@@ -191,9 +190,9 @@ def fftpower(field, polarity, poles=0, **kwargs):
             ffts1, scalar)
 
     # Compute multipoles
-    spectra, k, Nk, vk = _compute_multipoles(*args, **kwargs)
+    spectra, k, Nk, Vk = _compute_multipoles(*args, **kwargs)
 
-    return spectra, k, Nk, vk
+    return spectra, k, Nk, Vk
 
 
 def _compute_multipoles(FFT, w, p, kmag, khat, Ylms, poles,

@@ -7,12 +7,7 @@ To use GPU accelerated routines, run
   >>> ss.config.gpu = True
 
 Power spectrum
---------------
-.. automodule:: spatialstats.polyspectra.nufftpower
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
+----------------------------
 .. automodule:: spatialstats.polyspectra.fftpower
    :members:
    :undoc-members:
