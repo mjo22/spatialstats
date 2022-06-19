@@ -17,12 +17,12 @@ Adapted from https://github.com/wenyan4work/point_cloud.
 import numpy as np
 import scipy.spatial as spatial
 import numba as nb
-from scipy.integrate import simps
+from scipy.integrate import trapezoid
 from scipy.special import jv, spherical_jn, eval_legendre
 from time import time
 
 
-def fourier_multipoles(g_ell, ell, r, N, boxsize, dq=None, nq=None):
+def fourier_multipoles(g_ell, poles, r, N, boxsize, dq=None, nq=None):
     r"""
     .. _fourier_multipoles:
 
@@ -44,23 +44,22 @@ def fourier_multipoles(g_ell, ell, r, N, boxsize, dq=None, nq=None):
     :math:`G_{\ell}` must decay to zero for this to be
     well-defined.
 
-    Normalization is chosen so that the isotropic
+    Normalization is chosen based on the isotropic
     structure factor :math:`s(q)` defined by
 
     .. math::
 
-        s(q) = 4\pi\rho \int dr \ r^2 j_0(qr) [g(r) - 1]
+        s(q) = 1 + 4\pi\rho \int dr \ r^2 j_0(qr) [g(r) - 1]
 
-    is bounded between :math:`0` and :math:`1`, where
-    :math:`g(r)` is the radial distribution function.
+    , where :math:`g(r)` is the radial distribution function.
 
     Parameters
     ----------
     g_ell : `np.ndarray`, shape `(nr,)`
         Real space multipoles :math:`G_{\ell}(r)`
         returned by :ref:`spatialstats.particles.multipoles<multipoles>`.
-        Can be a ``list`` if ``ell`` is too.
-    ell : `int`
+        Can be a ``list`` if ``poles`` is too.
+    poles : `int`
         Multipole indices of ``g_ell``.
     r : `np.ndarray`, shape `(nr,)`
         Radial bins :math:`r` to integrate over.
@@ -80,12 +79,12 @@ def fourier_multipoles(g_ell, ell, r, N, boxsize, dq=None, nq=None):
     -------
     s_ells : `np.ndarray`, shape `(nq,)`
         Multipoles :math:`S_{\ell}(q)`. Returns a
-        list if ``ell`` is a ``list``.
+        list if ``poles`` is a ``list``.
     q : `np.ndarray`, shape `(nq,)`
         Wavenumber bins :math:`q`.
     """
     g_ells = [g_ell] if type(g_ell) is not list else g_ell
-    ells = [ell] if type(ell) is not list else ell
+    ells = [poles] if type(poles) is not list else poles
     dq = np.pi / r.max() if dq is None else dq
     nq = r.size if nq is None else nq
     q = np.arange(0, dq*nq, dq)
@@ -99,10 +98,10 @@ def fourier_multipoles(g_ell, ell, r, N, boxsize, dq=None, nq=None):
     def S(q, g_ell, ell):
         if ndim == 3:
             j_ell = spherical_jn(ell, q*r)
-            return 4*np.pi*rho*(-1.j)**ell*simps(r**2*j_ell*g_ell, r)
+            return 4*np.pi*rho*(-1.j)**ell*trapezoid(r**2*j_ell*g_ell, r)
         else:
             J_ell = jv(ell, q*r)
-            return 2*np.pi*rho*(-1.j)**ell*simps(r*J_ell*g_ell, r)
+            return 2*np.pi*rho*(-1.j)**ell*trapezoid(r*J_ell*g_ell, r)
 
     s_ells = []
     for idx in range(len(ells)):
@@ -112,12 +111,12 @@ def fourier_multipoles(g_ell, ell, r, N, boxsize, dq=None, nq=None):
             sq[jdx] = S(q[jdx], g_l, l)
         s_ells.append(sq)
 
-    result = s_ells if type(ell) is list else s_ells[0]
+    result = s_ells if type(poles) is list else s_ells[0]
 
     return result, q
 
 
-def multipoles(g, costheta, ell=0):
+def multipoles(g, costheta, poles=0):
     r"""
     .. _multipoles:
 
@@ -135,31 +134,30 @@ def multipoles(g, costheta, ell=0):
         returned by :ref:`spatialstats.particles.corr<corr>`.
     costheta : `np.ndarray`, shape `(ntheta,)`
         Array of :math:`\cos\theta` bins used as
-        integration domain in ``scipy.integrate.simps``.
+        integration domain in ``scipy.integrate.trapezoid``.
     ell : `int` or `list`
         Degree of multipole to compute. For example,
-        ``ell = [0, 1, 2]`` computes the monopole,
+        ``poles = [0, 1, 2]`` computes the monopole,
         dipole, and quadrapole.
 
     Returns
     -------
     g_ells : `np.ndarray`, shape `(nr,)`
-        Multipoles :math:`G_{\ell}(r)`. If ``type(ell) = list``,
+        Multipoles :math:`G_{\ell}(r)`. If ``type(poles) = list``,
         then ``g_ells`` is a ``list``.
-
     """
     nr, ntheta = g.shape
-    ells = [ell] if type(ell) is int else ell
+    ells = [poles] if type(poles) is not list else poles
 
-    def G(ell):
-        L = eval_legendre(ell, costheta)
-        return 0.5*(2*ell+1)*simps(g*L, costheta, axis=1)
+    def G(l):
+        L = eval_legendre(l, costheta)
+        return 0.5*(2*l+1)*trapezoid(g*L, costheta, axis=1)
 
     g_ells = []
     for l in ells:
         g_ells.append(G(l))
 
-    result = g_ells if type(ell) is list else g_ells[0]
+    result = g_ells if type(poles) is list else g_ells[0]
 
     return result
 

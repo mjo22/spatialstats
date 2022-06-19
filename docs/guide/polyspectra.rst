@@ -1,10 +1,22 @@
 spatialstats.polyspectra
 ========================
 
-To use GPU routines, run
+To use GPU accelerated routines, run
 
   >>> import spatialstats as ss
   >>> ss.config.gpu = True
+
+Power spectrum
+--------------
+.. automodule:: spatialstats.polyspectra.nufftpower
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: spatialstats.polyspectra.fftpower
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
 Bispectrum
 -----------------------------
@@ -19,7 +31,7 @@ Bispectrum
    :undoc-members:
    :show-inheritance:
 
-Power spectrum
+Power spectrum (legacy)
 --------------------------------------
 
 .. automodule:: spatialstats.polyspectra.powerspectrum

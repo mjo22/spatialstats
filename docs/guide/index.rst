@@ -7,5 +7,4 @@ API Reference
    :maxdepth: 1
 
    polyspectra
-   particles
-   utils
+   paircount

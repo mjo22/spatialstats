@@ -6,9 +6,9 @@
 spatialstats
 ========================================
 
-spatialstats is a collection of statistical tools and utility routines used to analyze the multi-scale structure of 2D and 3D spatial fields and particle distributions.
+spatialstats is a collection of correlation function routines used to analyze the 2D and 3D spatial fields and particle distributions.
 
-Routines are designed to work with large datasets and some include optional GPU acceleration. Each routine aims to be independent from the rest of the package, so feel free to just pull out the routine that you need from the `source code <https://github.com/mjo22/spatialstats>`_.
+Each routine aims to be independent from the rest of the package, so feel free to just pull out the routine that you need from the `source code <https://github.com/mjo22/spatialstats>`_.
 
 Any contributions and pointing out any `issues <https://github.com/mjo22/spatialstats/issues>`_ are much appreciated!
 
