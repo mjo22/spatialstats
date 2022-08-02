@@ -1,5 +1,5 @@
 # spatialstats #
-<tt>spatialstats</tt> is a collection of correlation function routines used to analyze the multi-scale structure of 2D and 3D spatial fields and particle distributions.
+<tt>spatialstats</tt> is a collection of correlation function routines used to analyze the multi-scale structure of 2D and 3D spatial fields and particle distributions. As of August 2022, this package will no longer be maintained.
 
 Each routine aims to be independent from the rest of the package, so feel free to just pull out the routine that you need!
 
